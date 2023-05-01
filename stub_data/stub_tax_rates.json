@@ -1,0 +1,14 @@
+{
+  "Rates": [
+    {
+      "TaxYear": 0,
+      "MedicareEmployee": 0,
+      "MedicareCompany": 0,
+      "SocialSecurityEmployee": 0,
+      "SocialSecurityCompany": 0,
+      "PaidFamilyMedicalLeave": 0,
+      "FederalUnemployment": 0,
+      "StateUnemployment": 0
+    }
+  ]
+}
