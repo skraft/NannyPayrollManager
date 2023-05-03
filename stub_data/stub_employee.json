@@ -4,5 +4,6 @@
   "PayRate": 0,
   "PaidVacationHoursPerYear": 0,
   "PaidSickHoursPerYear": 0,
-  "PaidHolidaysPerYear": 0
+  "PaidHolidaysPerYear": 0,
+  "Address": ""
 }
