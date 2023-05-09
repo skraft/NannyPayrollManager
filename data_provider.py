@@ -26,7 +26,7 @@ class PayType(Enum):
     PAID_TIME_OFF = 1
     PAID_HOLIDAY = 2
     PAID_SICK_TIME = 3
-    UNPAID_TIME_OFF = 4
+    UNPAID_TIME_OFF = 4  # FIXME Not implemented
 
 
 class TaxRates:
@@ -340,16 +340,24 @@ class DataProvider:
                 return employee
         raise DataProviderError(f"No match for employee: '{employee_name}'")
 
-    def add_worked_time(self, date: Date, employee_name: str, hours: int or float, pay_type: PayType = PayType.REGULAR,
-                        reimbursement: int or float = None, note: str = None):
+    def add_worked_time(
+        self,
+        date: Date,
+        employee: str or Employee,
+        hours: int or float,
+        pay_type: PayType = PayType.REGULAR,
+        reimbursement: int or float = None,
+        note: str = None
+    ):
         """Adds a time entry to the provided employee's worked_time list."""
-        employee = self.get_employee_from_name(employee_name)
+        if not isinstance(employee, Employee):
+            employee = self.get_employee_from_name(employee)
         rates = self.get_tax_rates()
 
         # check if this date has already been entered (except reimbursements which can share the date)
         for time_entry in employee.time_entries:
             if date == time_entry.date:
-                raise DuplicateEntryError(f"A time entry for {date} already exists for {employee_name}.")
+                raise DuplicateEntryError(f"A time entry for {date} already exists for {employee.name}.")
 
         time_entry = TimeEntry()
         time_entry.date = date
@@ -365,9 +373,10 @@ class DataProvider:
 
         employee.time_entries.append(time_entry)
 
-    def get_worked_time_in_range(self, employee_name: str, start_date: Date, end_date: Date) -> list[TimeEntry]:
+    def get_worked_time_in_range(self, employee: str or Employee, start_date: Date, end_date: Date) -> list[TimeEntry]:
         """Finds all time entries for the provided employee that match """
-        employee = self.get_employee_from_name(employee_name)
+        if not isinstance(employee, Employee):
+            employee = self.get_employee_from_name(employee)
 
         matches = []
         for time_entry in employee.time_entries:
