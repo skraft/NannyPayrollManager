@@ -144,8 +144,17 @@ class TimeEntry:
 
     @property
     def net_pay(self) -> float:
-        """Returns the employees take home pay after tax withholdings."""
-        return self.gross_pay - self.employee_taxes_withheld + self.reimbursement
+        """Returns the employees pay after tax withholdings (not including reimbursements)."""
+        try:
+            return self._net_pay
+        except AttributeError:
+            self._net_pay = self.gross_pay - self.employee_taxes_withheld
+            return self._net_pay
+
+    @property
+    def check_amount(self) -> float:
+        """Returns the employees take home pay."""
+        return self.net_pay + self.reimbursement
 
     @property
     def federal_unemployment(self) -> float:
@@ -178,7 +187,7 @@ class TimeEntry:
 
     @property
     def company_total_costs(self) -> float:
-        return self.gross_pay + self.company_tax_contributions
+        return self.gross_pay + self.company_tax_contributions + self.reimbursement
 
     def as_dictionary(self):
         """Returns the TimeEntry data as a dictionary. (so it can be written to json)."""
