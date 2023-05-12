@@ -2,6 +2,7 @@ __author__ = 'Sean Kraft'
 
 from pathlib import Path
 from datetime import date as Date
+
 from data_provider import Employee
 from data_provider import DataProvider
 from data_provider import PayType
@@ -116,6 +117,10 @@ class Timesheet:
         color_bdr = HexColor("6AA84F")
         color_red = HexColor("ED1C24")
         color_lt_green = HexColor("D9EAD3")
+        color_lt_gray = HexColor("C3C3C3")
+
+        start_date = self.start_date.strftime("%b %d, %Y")
+        end_date = self.end_date.strftime("%b %d, %Y")
 
         # build doc and layout
         doc = Document()
@@ -123,242 +128,241 @@ class Timesheet:
         doc.add_page(page)
         layout = SingleColumnLayout(page)
 
+        layout.add(Paragraph(f"Earnings Statement : {end_date}", font=f_bold, font_size=Decimal(16)))
+
         # add timesheet table
-        table = FlexibleColumnWidthTable(number_of_rows=24, number_of_columns=7)
+        ts_table = FlexibleColumnWidthTable(number_of_rows=27, number_of_columns=7)
 
-        # row 1: Earnings Title
+        # # row 1: Address Titles
+        text = Paragraph("Employee", font=f_bold, font_size=f_size_l)
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        text = Paragraph("Employer", font=f_bold, font_size=f_size_l)
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
+
+        # row 2: Name + Address
+        text = Paragraph(f"{self.employee.name}\n{self.employee.address_multiline}", font_size=f_size, respect_newlines_in_text=True)
+        ts_table.add(TableCell(text, border_width=Decimal(0), col_span=3, padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        text = Paragraph(f"{self.data_provider.employer.name}\n{self.data_provider.employer.address_multiline}", font_size=f_size, respect_newlines_in_text=True)
+        ts_table.add(TableCell(text, border_width=Decimal(0), col_span=3, padding_top=Decimal(3), padding_bottom=Decimal(3)))
+
+        # row 3: BLANK
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
+
+        # row 4: Earnings Title
         text = Paragraph("Employee Earnings", font=f_bold, font_size=f_size_l)
-        table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
 
-        # row 2: Earnings: Headers
-        text = Paragraph("Description", font=f_bold, font_size=f_size)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        # row 5: Earnings: Headers
+        text = Paragraph("Pay Period", font=f_bold, font_size=f_size)
+        ts_table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(120), padding_top=Decimal(3), padding_bottom=Decimal(3)))
         text = Paragraph("Rate", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
         text = Paragraph("Hours", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
         text = Paragraph("Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
         text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
 
-        # row 3: Earnings: Gross Earnings
-        table.add(TableCell(Paragraph("Gross Pay", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(f"${self.employee.pay_rate:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(str(self.timesheet.hours), font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        # row 6: Earnings: Gross Earnings
+        ts_table.add(TableCell(Paragraph(f"{start_date} - {end_date}", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(f"${self.employee.pay_rate:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(str(self.timesheet.hours), font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
 
-        # row 4: BLANK
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
+        # row 7: BLANK
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
 
-        # row 5: Tax: Titles
+        # row 8: Tax: Titles
         text = Paragraph("Employee Taxes Withheld", font=f_bold, font_size=f_size_l)
-        table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph("Employer Taxes", font=f_bold, font_size=f_size_l)
-        table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
 
-        # row 6: Tax: Headers
+        # row 9: Tax: Headers
         text = Paragraph("Employee Tax", font=f_bold, font_size=f_size)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
         text = Paragraph("Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
         text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), padding_top=Decimal(3)))
         text = Paragraph("Household Employer Tax", font=f_bold, font_size=f_size)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
         text = Paragraph("Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
         text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
 
-        # row 7: Tax: Medicare
-        table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
+        # row 10: Tax: Medicare
+        ts_table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.medicare_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.medicare_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.medicare_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.medicare_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 8: Tax: Social Security
-        table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
+        # row 11: Tax: Social Security
+        ts_table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.ss_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.ss_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.ss_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.ss_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 9: Tax: Family Medical Leave and Federal Unemployment
-        table.add(TableCell(Paragraph("WA Family Medical Leave", font_size=f_size), border_width=Decimal(0)))
+        # row 12: Tax: Family Medical Leave and Federal Unemployment
+        ts_table.add(TableCell(Paragraph("WA Family Medical Leave", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.paid_fml:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.paid_fml:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph("Federal Unemployment", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph("Federal Unemployment", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.federal_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.federal_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 10: Tax: State Unemployment
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph("WA State Unemployment", font_size=f_size), border_width=Decimal(0)))
+        # row 13: Tax: State Unemployment
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("WA State Unemployment", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.state_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet_ytd.state_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 11: BLANK
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
+        # row 14: BLANK
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
 
-        # row 12: Summary: Title
-        text = Paragraph("Summary", font=f_bold, font_size=f_size_l)
-        table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
-
-        # row 13: Summary: Headers
-        text = Paragraph("Description", font=f_bold, font_size=f_size)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3), padding_bottom=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
-        text = Paragraph("Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), preferred_width=Decimal(30)))
-        text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), preferred_width=Decimal(100), padding_top=Decimal(3)))
-
-        # row 14: Summary: Gross Earnings
-        table.add(TableCell(Paragraph("Gross Pay", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-
-        # row 15: Summary: Employee Taxes Withheld
-        table.add(TableCell(Paragraph("Employee Taxes Withheld", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-
-        # row 16: Summary: Net Pay
-        table.add(TableCell(Paragraph("Net Pay", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-
-        # row 17: Summary: Reimbursements
-        table.add(TableCell(Paragraph("Reimbursements", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-
-        # row 18: Summary: Check Amount
-        table.add(TableCell(Paragraph("Check Amount", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.check_amount:.2f}", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), background_color=color_lt_green))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.check_amount:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-
-        # row 19: BLANK
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
-
-        # row 20: Time Off Benefits: Title
+        # row 15: Time Off Benefits: Title
         text = Paragraph("Time Off Benefits", font=f_bold, font_size=f_size_l)
-        table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
 
-        # row 21: Time Off Benefits: Headers
+        # row 16: Time Off Benefits: Headers
         text = Paragraph("Description", font=f_bold, font_size=f_size)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph("Used Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph("Used Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph("Available", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
 
-        # row 22: Time Off Benefits: Paid Time Off
-        table.add(TableCell(Paragraph("Paid Time Off (Hours)", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        # row 17: Time Off Benefits: Paid Time Off
+        ts_table.add(TableCell(Paragraph("Paid Time Off (Hours)", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_time_off_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet_ytd.paid_time_off_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.employee.paid_vacation - self.timesheet_ytd.paid_time_off_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 23: Time Off Benefits: Sick Time
-        table.add(TableCell(Paragraph("Paid Sick Time (Hours)", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        # row 18: Time Off Benefits: Sick Time
+        ts_table.add(TableCell(Paragraph("Paid Sick Time (Hours)", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_sick_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet_ytd.paid_sick_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.employee.paid_sick - self.timesheet_ytd.paid_sick_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 24: Time Off Benefits: Paid Holidays
-        table.add(TableCell(Paragraph("Paid Holidays (Hours)", font_size=f_size), border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        # row 19: Time Off Benefits: Paid Holidays
+        ts_table.add(TableCell(Paragraph("Paid Holidays (Hours)", font_size=f_size), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_holiday_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet_ytd.paid_holiday_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
-        table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.employee.paid_holidays - self.timesheet_ytd.paid_holiday_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
-        table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        layout.add(table)
+        # row 20: BLANK
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
+
+        # row 21: Summary: Title
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        text = Paragraph("Summary", font=f_bold, font_size=f_size_l)
+        ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
+
+        # row 22: Summary: Headers
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        text = Paragraph("Description", font=f_bold, font_size=f_size)
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
+        text = Paragraph("Current Pay Period", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+        text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
+
+        # row 23: Summary: Gross Earnings
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("Gross Pay", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        # row 24: Summary: Employee Taxes Withheld
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("Employee Taxes Withheld", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        # row 25: Summary: Net Pay
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("Net Pay", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        # row 26: Summary: Reimbursements
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("Reimbursements", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        # row 27: Summary: Check Amount
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        ts_table.add(TableCell(Paragraph("Check Amount", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.check_amount:.2f}", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0), background_color=color_lt_green))
+        text = Paragraph(f"${self.timesheet_ytd.check_amount:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        layout.add(ts_table)
 
         with open(file_path, "wb") as pdf_file:
             PDF.dumps(pdf_file, doc)

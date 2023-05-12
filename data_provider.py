@@ -45,6 +45,37 @@ class TaxRates:
         return f"TaxRates(year={self.year})"
 
 
+class Employer:
+    def __init__(self, **kwargs):
+        self.name: str = kwargs.get("name")
+        self.ein: str = kwargs.get("ein")
+        self.business_id: str = kwargs.get("business_id")
+        self.address_line_1: str = kwargs.get("address_line_1")
+        self.address_line_2: str = kwargs.get("address_line_2")
+        self.address_line_3: str = kwargs.get("address_line_3")
+
+    @property
+    def address(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}, {self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}, {self.address_line_3}"
+        return address
+
+    @property
+    def address_multiline(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}\n{self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}\n{self.address_line_3}"
+        return address
+
+    def __repr__(self):
+        return f"Employer(name={self.name}, address={self.address})"
+
+
 class Employee:
     def __init__(self, **kwargs):
         self.name: str = kwargs.get("name")
@@ -53,10 +84,30 @@ class Employee:
         self.paid_vacation: int or float = kwargs.get("paid_vacation")  # in hours
         self.paid_sick: int or float = kwargs.get("paid_sick")  # in hours
         self.paid_holidays: int or float = kwargs.get("paid_holidays")  # in hours
-        self.address: str = kwargs.get("address")
+        self.address_line_1: str = kwargs.get("address_line_1")
+        self.address_line_2: str = kwargs.get("address_line_2")
+        self.address_line_3: str = kwargs.get("address_line_3")
         self.time_entries: list[TimeEntry] = []
 
         self.appdata_path: Path = None
+
+    @property
+    def address(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}, {self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}, {self.address_line_3}"
+        return address
+
+    @property
+    def address_multiline(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}\n{self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}\n{self.address_line_3}"
+        return address
 
     def __repr__(self):
         return f"Employee(name={self.name}, pay_rate={self.pay_rate})"
@@ -223,18 +274,15 @@ class DataProvider:
         self.first_run = False
 
         self.tax_rates = []
+        self.employer = Employer()
         self.employees = []
 
-        # if required appdata folders don't exist, create them
+        # if required appdata folders don't exist, create them and populate stub data
         self.init_appdata_dir()
 
-        # load all tax rate data
         self.load_tax_rate_data()
-
-        # load all employee data
+        self.load_employer_data()
         self.load_employee_data()
-
-        # load all timesheet data
         self.load_timesheet_data()
 
     def init_appdata_dir(self):
@@ -245,18 +293,19 @@ class DataProvider:
             shutil.copy(config.STUB_TAX_RATES_FILE, config.TAX_RATES_FILE)
             self.first_run = True
 
+        if not config.EMPLOYER_FILE.exists():
+            shutil.copy(config.STUB_EMPLOYER_FILE, config.EMPLOYER_FILE)
+            self.first_run = True
+
         if not config.EMPLOYEES_DIR.exists():
             config.EMPLOYEES_DIR.mkdir()
             self.first_run = True
 
         if self.first_run:
-            raise UserWarning('Populate tax rate and employee data before starting the tool.')
+            raise UserWarning('Populate tax rate, employer, and employee data before starting the tool.')
 
     def load_tax_rate_data(self):
         """Reads all tax rate entries from the appdata directory and serializes them."""
-        if not config.TAX_RATES_FILE.exists():
-            raise FileNotFoundError(config.TAX_RATES_FILE)
-
         with open(config.TAX_RATES_FILE) as inFile:
             tax_rates = json.load(inFile)
 
@@ -273,6 +322,17 @@ class DataProvider:
                 tax_rate.state_unemployment = rates["StateUnemployment"]
 
                 self.tax_rates.append(tax_rate)
+
+    def load_employer_data(self):
+        """Reads the employer data from the appdata directory and serializes it."""
+        with open(config.EMPLOYER_FILE) as inFile:
+            employer = json.load(inFile)
+            self.employer.name = employer["Name"]
+            self.employer.ein = employer["EIN"]
+            self.employer.business_id = employer["BusinessID"]
+            self.employer.address_line_1 = employer["AddressLine1"]
+            self.employer.address_line_2 = employer["AddressLine2"]
+            self.employer.address_line_3 = employer["AddressLine3"]
 
     def load_employee_data(self):
         """Reads all employee entries from the appdata directory and serializes them."""
@@ -292,7 +352,9 @@ class DataProvider:
                 employee.paid_vacation = emp["PaidVacationHoursPerYear"]
                 employee.paid_sick = emp["PaidSickHoursPerYear"]
                 employee.paid_holidays = emp["PaidHolidayHoursPerYear"]
-                employee.address = emp["Address"]
+                employee.address_line_1 = emp["AddressLine1"]
+                employee.address_line_2 = emp["AddressLine2"]
+                employee.address_line_3 = emp["AddressLine3"]
                 employee.appdata_path = employee_file
 
                 self.employees.append(employee)
