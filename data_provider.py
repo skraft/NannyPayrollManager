@@ -26,7 +26,6 @@ class PayType(Enum):
     PAID_TIME_OFF = 1
     PAID_HOLIDAY = 2
     PAID_SICK_TIME = 3
-    UNPAID_TIME_OFF = 4  # FIXME Not implemented
 
 
 class TaxRates:
@@ -43,6 +42,24 @@ class TaxRates:
 
     def __repr__(self):
         return f"TaxRates(year={self.year})"
+
+
+class PaidHoliday:
+    def __init__(self, **kwargs):
+        self.name: str = kwargs.get("name")
+        self.date: Date = kwargs.get("date")
+
+    def __repr__(self):
+        return f"PaidHoliday(name='{self.name}', date='{self.date}')"
+
+    def as_dictionary(self):
+        """Returns the PaidHoliday data as a dictionary. (so it can be written to json)."""
+        return {"Name": self.name, "Date": self.date.isoformat()}
+
+    def populate_from_dictionary(self, in_dict):
+        """Populates the class data from a provided dictionary. (so it can be loaded from json)"""
+        self.name = in_dict["Name"]
+        self.date = Date.fromisoformat(in_dict["Date"])
 
 
 class Employer:
@@ -89,6 +106,7 @@ class Employee:
         self.address_line_3: str = kwargs.get("address_line_3")
         self.time_entries: list[TimeEntry] = []
 
+        self._time_entries_dirty = False  # for tracking if a write to disk is needed
         self.appdata_path: Path = None
 
     @property
@@ -274,6 +292,8 @@ class DataProvider:
         self.first_run = False
 
         self.tax_rates = []
+        self.paid_holidays = []
+        self._paid_holidays_dirty = False  # for tracking if a write to disk is needed
         self.employer = Employer()
         self.employees = []
 
@@ -281,6 +301,7 @@ class DataProvider:
         self.init_appdata_dir()
 
         self.load_tax_rate_data()
+        self.load_paid_holidays()
         self.load_employer_data()
         self.load_employee_data()
         self.load_timesheet_data()
@@ -306,8 +327,9 @@ class DataProvider:
 
     def load_tax_rate_data(self):
         """Reads all tax rate entries from the appdata directory and serializes them."""
-        with open(config.TAX_RATES_FILE) as inFile:
-            tax_rates = json.load(inFile)
+        self.tax_rates = []
+        with open(config.TAX_RATES_FILE) as in_file:
+            tax_rates = json.load(in_file)
 
             for rates in tax_rates:
                 tax_rate = TaxRates()
@@ -323,6 +345,19 @@ class DataProvider:
 
                 self.tax_rates.append(tax_rate)
 
+    def load_paid_holidays(self):
+        self.paid_holidays = []
+        if not config.PAID_HOLIDAYS_FILE.exists():
+            print(f"WARNING: Unable to load '{config.PAID_HOLIDAYS_FILE}'. Paid holidays will not auto-populate.")
+            return
+
+        with open(config.PAID_HOLIDAYS_FILE) as in_file:
+            json_entries = json.load(in_file)
+            for holiday_dict in json_entries:
+                holiday = PaidHoliday()
+                holiday.populate_from_dictionary(holiday_dict)
+                self.paid_holidays.append(holiday)
+
     def load_employer_data(self):
         """Reads the employer data from the appdata directory and serializes it."""
         with open(config.EMPLOYER_FILE) as inFile:
@@ -336,6 +371,7 @@ class DataProvider:
 
     def load_employee_data(self):
         """Reads all employee entries from the appdata directory and serializes them."""
+        self.employees = []
         employee_files = config.EMPLOYEES_DIR.glob('**/*.json')
         for employee_file in employee_files:
             # skip all but the base employee files  TODO this should be better?
@@ -374,11 +410,17 @@ class DataProvider:
                     time_entry.populate_from_dictionary(time_dict)
                     employee.time_entries.append(time_entry)
 
+    @property
+    def employee_names(self):
+        """Returns the names of all populated employees."""
+        return [employee.name for employee in self.employees]
+
     def make_new_employee(self, name: str):
         employee_name = name.replace(" ", "")
         employee_dir = config.EMPLOYEES_DIR / employee_name
         if employee_dir.exists():
-            raise FileExistsError(f'A directory named {employee_name} already exists.')
+            print(f'ERROR: A directory named {employee_name} already exists.')
+            return
 
         employee_dir.mkdir(parents=True)
         shutil.copy(config.STUB_EMPLOYEE_FILE, employee_dir / (employee_name + '.json'))
@@ -409,7 +451,18 @@ class DataProvider:
         for employee in self.employees:
             if employee.name == employee_name:
                 return employee
-        raise DataProviderError(f"No match for employee: '{employee_name}'")
+        print(f"ERROR: No match for employee: '{employee_name}'")
+
+    def add_paid_holiday(self, name: str, date: Date):
+        """Adds a paid holiday. The UI will use these to auto-populate paid holiday settings on the matching day."""
+        # check if this date has already been entered
+        for paid_holiday in self.paid_holidays:
+            if date == paid_holiday.date:
+                print(f"WARNING: A paid holiday entry for {date} already exists: '{paid_holiday.name}'")
+                return
+
+        self.paid_holidays.append(PaidHoliday(name=name, date=date))
+        self._paid_holidays_dirty = True
 
     def add_worked_time(
         self,
@@ -428,7 +481,8 @@ class DataProvider:
         # check if this date has already been entered (except reimbursements which can share the date)
         for time_entry in employee.time_entries:
             if date == time_entry.date:
-                raise DuplicateEntryError(f"A time entry for {date} already exists for {employee.name}.")
+                print(f"WARNING: A time entry for {date} already exists for {employee.name}. Skipping")
+                return
 
         time_entry = TimeEntry()
         time_entry.date = date
@@ -443,6 +497,7 @@ class DataProvider:
             time_entry.note = note
 
         employee.time_entries.append(time_entry)
+        employee._time_entries_dirty = True
 
     def get_worked_time_in_range(self, employee: str or Employee, start_date: Date, end_date: Date) -> list[TimeEntry]:
         """Finds all time entries for the provided employee that match """
@@ -456,8 +511,14 @@ class DataProvider:
 
         return matches
 
-    def save(self):
+    def save(self) -> bool:
+        """Writes any modified time entries or holidays to disk."""
+        saved = False
+        # write time entries
         for employee in self.employees:
+            if not employee._time_entries_dirty:
+                continue
+
             employee_file_name = employee.name.replace(" ", "")
             file_path = config.EMPLOYEES_DIR / employee_file_name / f"{employee_file_name}_TimeEntries.json"
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -466,5 +527,24 @@ class DataProvider:
             with open(file_path, "w") as outfile:
                 json.dump(all_time_entries, outfile, indent=2)
 
+            employee._time_entries_dirty = False
+            saved = True
             print(f"{file_path} saved.")
+
+        # write paid holidays
+        if self._paid_holidays_dirty:
+            config.PAID_HOLIDAYS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            all_holiday_entries = [holiday.as_dictionary() for holiday in self.paid_holidays]
+            with open(config.PAID_HOLIDAYS_FILE, 'w') as outfile:
+                json.dump(all_holiday_entries, outfile, indent=2)
+
+            self._paid_holidays_dirty = False
+            saved = True
+            print(f"{config.PAID_HOLIDAYS_FILE} saved.")
+
+        if saved:
+            return True
+        else:
+            print("WARNING: Nothing to save.")
+            return False
 

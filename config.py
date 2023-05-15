@@ -16,4 +16,8 @@ STUB_EMPLOYEE_FILE = STUB_DATA_DIR / 'stub_employee.json'
 APP_DATA_DIR = Path(os.getenv('APPDATA')) / 'NannyPayrollManager'
 TAX_RATES_FILE = APP_DATA_DIR / 'tax_rates.json'
 EMPLOYER_FILE = APP_DATA_DIR / 'employer.json'
+PAID_HOLIDAYS_FILE = APP_DATA_DIR / 'paid_holidays.json'
 EMPLOYEES_DIR = APP_DATA_DIR / 'Employees'
+
+# default timesheet location
+TIMESHEET_DIR = Path.home() / "Downloads"
