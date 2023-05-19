@@ -3,7 +3,7 @@
 __author__ = 'Sean Kraft'
 
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 import data_provider
 import reports
 from pathlib import Path
@@ -22,6 +22,13 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
 
         self.setObjectName("NannyPayrollManager")
         self.setWindowTitle(self.UI_NAME)
+
+        self.employee = None
+        self.date_1_overlap = False
+        self.date_2_overlap = False
+        self.date_3_overlap = False
+        self.date_4_overlap = False
+        self.date_5_overlap = False
 
         self.cbx_employee = None
         self.chk_time_1 = None
@@ -74,6 +81,7 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         lyo_header.addWidget(QtWidgets.QLabel("Employee:"))
         self.cbx_employee = QtWidgets.QComboBox()
         self.cbx_employee.setMinimumWidth(150)
+        self.cbx_employee.currentIndexChanged.connect(self.on_employee_changed)
         lyo_header.addWidget(self.cbx_employee)
         lyo_main.addLayout(lyo_header)
         spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
@@ -303,12 +311,14 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.cbx_time_4.addItems(pay_types)
         self.cbx_time_5.addItems(pay_types)
 
+        # autofill holidays
         self.check_for_holidays(self.dte_time_1, self.cbx_time_1, self.lne_time_1)
         self.check_for_holidays(self.dte_time_2, self.cbx_time_2, self.lne_time_2)
         self.check_for_holidays(self.dte_time_3, self.cbx_time_3, self.lne_time_3)
         self.check_for_holidays(self.dte_time_4, self.cbx_time_4, self.lne_time_4)
         self.check_for_holidays(self.dte_time_5, self.cbx_time_5, self.lne_time_5)
 
+        # autofill timesheet
         self.dte_timesheet_start.setDate(self.last_monday)
         self.dte_timesheet_end.setDate(self.last_monday.addDays(4))
         self.update_timesheet_path()
@@ -330,6 +340,33 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         if not match:
             type_wdg.setCurrentIndex(0)
             note_wdg.clear()
+
+    def check_for_overlapping_dates(self, date_widget):
+        """Colors any time entry dates that already exist for the selected employee."""
+        overlap = False
+        date = date_widget.date().toPython()
+        for time_entry in self.employee.time_entries:
+            if date == time_entry.date:
+                overlap = True
+                break
+
+        if overlap:
+            date_widget.setStyleSheet("QDateEdit{color: red;}")
+            date_widget.setToolTip("There is already a time entry on this date.")
+        else:
+            date_widget.setStyleSheet("")
+            date_widget.setToolTip("")
+
+        return overlap
+
+    def on_employee_changed(self):
+        self.employee = self.data.get_employee_from_name(self.cbx_employee.currentText())
+        self.update_timesheet_path()
+        self.date_1_overlap = self.check_for_overlapping_dates(self.dte_time_1)
+        self.date_2_overlap = self.check_for_overlapping_dates(self.dte_time_2)
+        self.date_3_overlap = self.check_for_overlapping_dates(self.dte_time_3)
+        self.date_4_overlap = self.check_for_overlapping_dates(self.dte_time_4)
+        self.date_5_overlap = self.check_for_overlapping_dates(self.dte_time_5)
 
     def on_time_1_checked(self):
         is_enabled = self.chk_time_1.isChecked()
@@ -380,22 +417,26 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.dte_time_5.setDate(first_date.addDays(4))
 
         self.check_for_holidays(self.dte_time_1, self.cbx_time_1, self.lne_time_1)
+        self.date_1_overlap = self.check_for_overlapping_dates(self.dte_time_1)
 
     def on_date_2_update(self):
         self.check_for_holidays(self.dte_time_2, self.cbx_time_2, self.lne_time_2)
+        self.date_2_overlap = self.check_for_overlapping_dates(self.dte_time_2)
 
     def on_date_3_update(self):
         self.check_for_holidays(self.dte_time_3, self.cbx_time_3, self.lne_time_3)
+        self.date_3_overlap = self.check_for_overlapping_dates(self.dte_time_3)
 
     def on_date_4_update(self):
         self.check_for_holidays(self.dte_time_4, self.cbx_time_4, self.lne_time_4)
+        self.date_4_overlap = self.check_for_overlapping_dates(self.dte_time_4)
 
     def on_date_5_update(self):
         self.check_for_holidays(self.dte_time_5, self.cbx_time_5, self.lne_time_5)
+        self.date_5_overlap = self.check_for_overlapping_dates(self.dte_time_5)
 
     def add_time_from_ui(
         self,
-        employee,
         date_wdg: QtWidgets.QDateEdit,
         hours_wdg: QtWidgets.QDoubleSpinBox,
         type_wdg: QtWidgets.QComboBox,
@@ -415,22 +456,41 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
             return
 
         # add the time entry
-        self.data.add_worked_time(date, employee, hours, pay_type, reimbursement, note)
+        self.data.add_worked_time(date, self.employee, hours, pay_type, reimbursement, note)
 
     def on_save(self):
         """Collects the data from the Enter Time fields and writes them to disk for the selected employee."""
-        employee = self.data.get_employee_from_name(self.cbx_employee.currentText())
+        # if any of the chosen dates overlap existing time entries, ask the user if they want to proceed
+        # TODO check if any date widgets share a date and warn about overlaps
+        overlaps_to_check = []
+        if self.chk_time_1.isChecked():
+            overlaps_to_check.append(self.date_1_overlap)
+        if self.chk_time_2.isChecked():
+            overlaps_to_check.append(self.date_2_overlap)
+        if self.chk_time_3.isChecked():
+            overlaps_to_check.append(self.date_3_overlap)
+        if self.chk_time_4.isChecked():
+            overlaps_to_check.append(self.date_4_overlap)
+        if self.chk_time_5.isChecked():
+            overlaps_to_check.append(self.date_5_overlap)
+        if any(overlaps_to_check):
+            flags = QtWidgets.QMessageBox.StandardButton.Yes
+            flags |= QtWidgets.QMessageBox.StandardButton.Cancel
+            question = "Are you sure you want to add time entries on the same date as existing entries?"
+            response = QtWidgets.QMessageBox.question(self, "Add Overlapping Date?", question, flags)
+            if response != QtWidgets.QMessageBox.Yes:
+                return
 
         if self.chk_time_1.isChecked():
-            self.add_time_from_ui(employee, self.dte_time_1, self.spn_time_hours_1, self.cbx_time_1, self.spn_time_reimburse_1, self.lne_time_1)
+            self.add_time_from_ui(self.dte_time_1, self.spn_time_hours_1, self.cbx_time_1, self.spn_time_reimburse_1, self.lne_time_1)
         if self.chk_time_2.isChecked():
-            self.add_time_from_ui(employee, self.dte_time_2, self.spn_time_hours_2, self.cbx_time_2, self.spn_time_reimburse_2, self.lne_time_2)
+            self.add_time_from_ui(self.dte_time_2, self.spn_time_hours_2, self.cbx_time_2, self.spn_time_reimburse_2, self.lne_time_2)
         if self.chk_time_3.isChecked():
-            self.add_time_from_ui(employee, self.dte_time_3, self.spn_time_hours_3, self.cbx_time_3, self.spn_time_reimburse_3, self.lne_time_3)
+            self.add_time_from_ui(self.dte_time_3, self.spn_time_hours_3, self.cbx_time_3, self.spn_time_reimburse_3, self.lne_time_3)
         if self.chk_time_4.isChecked():
-            self.add_time_from_ui(employee, self.dte_time_4, self.spn_time_hours_4, self.cbx_time_4, self.spn_time_reimburse_4, self.lne_time_4)
+            self.add_time_from_ui(self.dte_time_4, self.spn_time_hours_4, self.cbx_time_4, self.spn_time_reimburse_4, self.lne_time_4)
         if self.chk_time_5.isChecked():
-            self.add_time_from_ui(employee, self.dte_time_5, self.spn_time_hours_5, self.cbx_time_5, self.spn_time_reimburse_5, self.lne_time_5)
+            self.add_time_from_ui(self.dte_time_5, self.spn_time_hours_5, self.cbx_time_5, self.spn_time_reimburse_5, self.lne_time_5)
 
         success = self.data.save()
 

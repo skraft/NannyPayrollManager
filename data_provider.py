@@ -478,11 +478,11 @@ class DataProvider:
             employee = self.get_employee_from_name(employee)
         rates = self.get_tax_rates()
 
-        # check if this date has already been entered (except reimbursements which can share the date)
+        # check if this date has already been entered and warn (this is allowed to support split time type days)
         for time_entry in employee.time_entries:
             if date == time_entry.date:
-                print(f"WARNING: A time entry for {date} already exists for {employee.name}. Skipping")
-                return
+                print(f"WARNING: A time entry for {date} already exists for {employee.name}.")
+                break
 
         time_entry = TimeEntry()
         time_entry.date = date
