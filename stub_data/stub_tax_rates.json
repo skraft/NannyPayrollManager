@@ -7,6 +7,12 @@
     "SocialSecurityCompany": 0,
     "PaidFamilyMedicalLeave": 0,
     "FederalUnemployment": 0,
-    "StateUnemployment": 0
+    "StateUnemployment": 0,
+    "FederalWithholding":
+    {
+      "Worksheet1A_1G_Married": 0,
+      "Worksheet1A_1G_NotMarried": 0,
+      "PercentageTables": {}
+    }
   }
 ]

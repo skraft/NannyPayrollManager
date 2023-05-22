@@ -6,6 +6,7 @@ from datetime import date as Date
 from data_provider import Employee
 from data_provider import DataProvider
 from data_provider import PayType
+from data_provider import W4FilingStatus
 from decimal import Decimal
 
 from borb.pdf import Document
@@ -18,13 +19,6 @@ from borb.pdf import Paragraph
 from borb.pdf import TableCell
 from borb.pdf import HexColor
 from borb.pdf import PDF
-
-
-class MyParagraph(Paragraph):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.vertical_alignment = Alignment.MIDDLE
-        self.horizontal_alignment = Alignment.RIGHT
 
 
 class TimesheetValues:
@@ -110,6 +104,64 @@ class Timesheet:
             self.timesheet.federal_unemployment = pay_before_overage * rate
             self.timesheet_ytd.federal_unemployment = tax_rates.federal_unemployment_hour_cap * rate
 
+        # calculate the federal withholding (if the employee filled out the optional W4 requesting withholding)
+        # this procedure comes from Pub 15-T, Worksheet 1A. This function assumes a 2020 or later W4 form
+        if self.employee.w4 is not None:
+            # step 1
+            line_1c = self.timesheet.gross_pay * self.employee.w4.pay_periods_per_year
+            line_1e = line_1c + self.employee.w4.line_4A
+            if self.employee.w4.line_2C:
+                line_1g = 0
+            else:
+                married_rate = tax_rates.federal_withholding["Worksheet1A_1G_Married"]
+                not_married_rate = tax_rates.federal_withholding["Worksheet1A_1G_NotMarried"]
+                line_1g = married_rate if self.employee.w4.line_1C is W4FilingStatus.MARRIED else not_married_rate
+            line_1h = line_1g + self.employee.w4.line_4B
+            adjusted_annual_wage_amount = max(0, (line_1e - line_1h))  # negative values should be 0
+            print(f"Adjusted Annual Wage Amount: ${adjusted_annual_wage_amount:,.2f}")
+
+            # step 2
+            withholding_table = self.get_federal_withholding_table(tax_rates)
+            withholding_row = None
+            for row in withholding_table:
+                if row["A"] <= adjusted_annual_wage_amount < row["B"]:
+                    withholding_row = row
+                    break
+            line_2e = adjusted_annual_wage_amount - withholding_row["A"]
+            line_2f = line_2e * (withholding_row["D"] / 100)
+            line_2g = withholding_row["C"] + line_2f
+            tentative_withholding_amount = line_2g / self.employee.w4.pay_periods_per_year
+            print(f"Tentative Withholding Amount: ${tentative_withholding_amount:,.2f}")
+
+            # step 3
+            line_3b = self.employee.w4.line_3 / self.employee.w4.pay_periods_per_year
+            line_3c = max(0, (tentative_withholding_amount - line_3b))
+
+            # step 4
+            final_withholding = line_3c + self.employee.w4.line_4C
+            print(f"Final Withholding Amount: ${final_withholding:,.2f}")
+
+    def get_federal_withholding_amount(self, tax_rates):
+        # TODO move the logic here
+        pass
+
+    def get_federal_withholding_table(self, tax_rates):
+        """Returns the appropriate section of the percentage method table based on the employee's W4 values."""
+        if self.employee.w4.line_2C:  # if multiple jobs is checked
+            if self.employee.w4.line_1C is W4FilingStatus.MARRIED:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Married"]
+            elif self.employee.w4.line_1C is W4FilingStatus.SINGLE:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Single"]
+            else:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Head"]
+        else:
+            if self.employee.w4.line_1C is W4FilingStatus.MARRIED:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Married"]
+            elif self.employee.w4.line_1C is W4FilingStatus.SINGLE:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Single"]
+            else:
+                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Head"]
+
     def to_pdf(self, file_path: Path):
         f_size = Decimal(8)
         f_size_l = Decimal(10)
@@ -173,8 +225,8 @@ class Timesheet:
         ts_table.add(TableCell(Paragraph(f"${self.employee.pay_rate:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(str(self.timesheet.hours), font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
-        ts_table.add(TableCell(Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
-        ts_table.add(TableCell(Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(f"${self.timesheet.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(f"${self.timesheet_ytd.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
 
         # row 7: BLANK
@@ -204,49 +256,49 @@ class Timesheet:
 
         # row 10: Tax: Medicare
         ts_table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.medicare_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.medicare_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.medicare_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.medicare_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph("Medicare", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.medicare_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.medicare_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.medicare_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.medicare_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 11: Tax: Social Security
         ts_table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.ss_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.ss_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.ss_employee:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.ss_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph("Social Security", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.ss_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.ss_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.ss_company:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.ss_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 12: Tax: Family Medical Leave and Federal Unemployment
         ts_table.add(TableCell(Paragraph("WA Family Medical Leave", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.paid_fml:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.paid_fml:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.paid_fml:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.paid_fml:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph("Federal Unemployment", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.federal_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.federal_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.federal_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.federal_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 13: Tax: State Unemployment
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("WA State Unemployment", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.state_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.state_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.state_unemployment:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.state_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 14: BLANK
@@ -325,41 +377,41 @@ class Timesheet:
         # row 23: Summary: Gross Earnings
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Gross Pay", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.gross_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 24: Summary: Employee Taxes Withheld
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Employee Taxes Withheld", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.employee_taxes_withheld:,.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.employee_taxes_withheld:.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.employee_taxes_withheld:,.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 25: Summary: Net Pay
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Net Pay", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.net_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.net_pay:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.net_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 26: Summary: Reimbursements
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Reimbursements", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.reimbursements:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.reimbursements:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.reimbursements:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         # row 27: Summary: Check Amount
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Check Amount", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.check_amount:.2f}", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.check_amount:,.2f}", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0), background_color=color_lt_green))
-        text = Paragraph(f"${self.timesheet_ytd.check_amount:.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.check_amount:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
         layout.add(ts_table)
@@ -412,5 +464,6 @@ class Timesheet:
         print(f'Paid Holiday Remaining (hours): {self.employee.paid_holidays - self.timesheet_ytd.paid_holiday_hours}')
         print(f'Paid Sick Time Used To-Date (hours): {self.timesheet_ytd.paid_sick_hours}')
         print(f'Paid Sick Time Remaining (hours): {self.employee.paid_sick - self.timesheet_ytd.paid_sick_hours}')
+
 
 

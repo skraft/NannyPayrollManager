@@ -7,5 +7,14 @@
   "PaidHolidaysPerYear": 0,
   "AddressLine1": "",
   "AddressLine2": "",
-  "AddressLine3": ""
+  "AddressLine3": "",
+  "W4": {
+    "1C": "Single, Married, or Head",
+    "2C": false,
+    "3": 0,
+    "4A": 0,
+    "4B": 0,
+    "4C": 0,
+    "PayPeriodsPerYear": 0
+  }
 }

@@ -362,11 +362,21 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
     def on_employee_changed(self):
         self.employee = self.data.get_employee_from_name(self.cbx_employee.currentText())
         self.update_timesheet_path()
-        self.date_1_overlap = self.check_for_overlapping_dates(self.dte_time_1)
-        self.date_2_overlap = self.check_for_overlapping_dates(self.dte_time_2)
-        self.date_3_overlap = self.check_for_overlapping_dates(self.dte_time_3)
-        self.date_4_overlap = self.check_for_overlapping_dates(self.dte_time_4)
-        self.date_5_overlap = self.check_for_overlapping_dates(self.dte_time_5)
+        if self.check_for_overlapping_dates(self.dte_time_1):
+            self.date_1_overlap = True
+            self.chk_time_1.setChecked(False)  # FIXME not working
+        if self.check_for_overlapping_dates(self.dte_time_2):
+            self.date_2_overlap = True
+            self.chk_time_2.setChecked(False)
+        if self.check_for_overlapping_dates(self.dte_time_3):
+            self.date_3_overlap = True
+            self.chk_time_3.setChecked(False)
+        if self.check_for_overlapping_dates(self.dte_time_4):
+            self.date_4_overlap = True
+            self.chk_time_4.setChecked(False)
+        if self.check_for_overlapping_dates(self.dte_time_5):
+            self.date_5_overlap = True
+            self.chk_time_5.setChecked(False)
 
     def on_time_1_checked(self):
         is_enabled = self.chk_time_1.isChecked()

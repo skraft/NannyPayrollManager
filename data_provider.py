@@ -28,6 +28,12 @@ class PayType(Enum):
     PAID_SICK_TIME = 3
 
 
+class W4FilingStatus(Enum):
+    SINGLE = 0  # Single or Married filing separately
+    MARRIED = 1  # Married filing jointly or Qualifying surviving spouse
+    HEAD = 2  # Head of household
+
+
 class TaxRates:
     def __init__(self, **kwargs):
         self.year: int = kwargs.get("year")
@@ -39,6 +45,7 @@ class TaxRates:
         self.federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
         self.federal_unemployment_hour_cap: int = kwargs.get("federal_unemployment_hour_cap")
         self.state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
+        self.federal_withholding: dict = kwargs.get("federal_withholding")
 
     def __repr__(self):
         return f"TaxRates(year={self.year})"
@@ -93,6 +100,20 @@ class Employer:
         return f"Employer(name={self.name}, address={self.address})"
 
 
+class EmployeeW4:
+    def __init__(self, **kwargs):
+        self.line_1C: W4FilingStatus = kwargs.get("1C")  # filing status
+        self.line_2C: bool = kwargs.get("2C", False)  # Box 2C is checked
+        self.line_3: int or float = kwargs.get("3", 0)  # Claim dependent and other credits
+        self.line_4A: int or float = kwargs.get("4A", 0)  # Other income
+        self.line_4B: int or float = kwargs.get("4B", 0)  # Deductions
+        self.line_4C: int or float = kwargs.get("4C", 0)  # Extra withholdings
+        self.pay_periods_per_year: int = kwargs.get("pay_periods_per_year", 0)  # see Pub 15-T, Worksheet 1A, Table 3
+
+    def __repr__(self):
+        return f"EmployeeW4('1C'={self.line_1C}, '2C'={self.line_2C}, '3'={self.line_3}, 'pay_periods_per_year'={self.pay_periods_per_year})"
+
+
 class Employee:
     def __init__(self, **kwargs):
         self.name: str = kwargs.get("name")
@@ -104,6 +125,7 @@ class Employee:
         self.address_line_1: str = kwargs.get("address_line_1")
         self.address_line_2: str = kwargs.get("address_line_2")
         self.address_line_3: str = kwargs.get("address_line_3")
+        self.w4: EmployeeW4 = kwargs.get('w4')
         self.time_entries: list[TimeEntry] = []
 
         self._time_entries_dirty = False  # for tracking if a write to disk is needed
@@ -342,6 +364,7 @@ class DataProvider:
                 tax_rate.federal_unemployment = rates["FederalUnemployment"]
                 tax_rate.federal_unemployment_hour_cap = rates["FederalUnemploymentHourCap"]
                 tax_rate.state_unemployment = rates["StateUnemployment"]
+                tax_rate.federal_withholding = rates["FederalWithholding"]
 
                 self.tax_rates.append(tax_rate)
 
@@ -392,6 +415,24 @@ class DataProvider:
                 employee.address_line_2 = emp["AddressLine2"]
                 employee.address_line_3 = emp["AddressLine3"]
                 employee.appdata_path = employee_file
+
+                # add W4 (if available)
+                if "W4" in emp:
+                    w4 = EmployeeW4()
+                    for filing_status in W4FilingStatus:
+                        if filing_status.name.lower() == emp["W4"]["1C"].lower():
+                            w4.line_1C = filing_status
+                            break
+                    w4.line_2C = emp["W4"]["2C"]
+                    w4.line_3 = emp["W4"]["3"]
+                    w4.line_4A = emp["W4"]["4A"]
+                    w4.line_4B = emp["W4"]["4B"]
+                    w4.line_4C = emp["W4"]["4C"]
+                    w4.pay_periods_per_year = emp["W4"]["PayPeriodsPerYear"]
+                    if w4.line_1C is None:
+                        print(f'WARNING: Unable to load W4 data for {employee.name} because the data is invalid.')
+                    else:
+                        employee.w4 = w4
 
                 self.employees.append(employee)
 
