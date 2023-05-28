@@ -1,6 +1,7 @@
 
 __author__ = 'Sean Kraft'
 
+import calendar
 from datetime import date as Date
 from pathlib import Path
 from enum import Enum
@@ -32,86 +33,6 @@ class W4FilingStatus(Enum):
     SINGLE = 0  # Single or Married filing separately
     MARRIED = 1  # Married filing jointly or Qualifying surviving spouse
     HEAD = 2  # Head of household
-
-
-class TaxRates:
-    def __init__(self, **kwargs):
-        self.year: int = kwargs.get("year")
-        self.medicare_employee: int or float = kwargs.get("medicare_employee")  # percent value: ie 1.45%
-        self.medicare_company: int or float = kwargs.get("medicare_company")  # percent value: ie 1.45%
-        self.ss_employee: int or float = kwargs.get("ss_employee")  # percent value: ie 1.45%
-        self.ss_company: int or float = kwargs.get("ss_company")  # percent value: ie 1.45%
-        self.paid_fml: int or float = kwargs.get("paid_fml")  # percent value: ie 1.45%
-        self.federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
-        self.federal_unemployment_hour_cap: int = kwargs.get("federal_unemployment_hour_cap")
-        self.state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
-        self.federal_withholding: dict = kwargs.get("federal_withholding")
-
-    def __repr__(self):
-        return f"TaxRates(year={self.year})"
-
-
-class PaidHoliday:
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name")
-        self.date: Date = kwargs.get("date")
-
-    def __repr__(self):
-        return f"PaidHoliday(name='{self.name}', date='{self.date}')"
-
-    def as_dictionary(self):
-        """Returns the PaidHoliday data as a dictionary. (so it can be written to json)."""
-        return {"Name": self.name, "Date": self.date.isoformat()}
-
-    def populate_from_dictionary(self, in_dict):
-        """Populates the class data from a provided dictionary. (so it can be loaded from json)"""
-        self.name = in_dict["Name"]
-        self.date = Date.fromisoformat(in_dict["Date"])
-
-
-class Employer:
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name")
-        self.ein: str = kwargs.get("ein")
-        self.business_id: str = kwargs.get("business_id")
-        self.address_line_1: str = kwargs.get("address_line_1")
-        self.address_line_2: str = kwargs.get("address_line_2")
-        self.address_line_3: str = kwargs.get("address_line_3")
-
-    @property
-    def address(self):
-        address = self.address_line_1
-        if self.address_line_2:
-            address = f"{address}, {self.address_line_2}"
-        if self.address_line_3:
-            address = f"{address}, {self.address_line_3}"
-        return address
-
-    @property
-    def address_multiline(self):
-        address = self.address_line_1
-        if self.address_line_2:
-            address = f"{address}\n{self.address_line_2}"
-        if self.address_line_3:
-            address = f"{address}\n{self.address_line_3}"
-        return address
-
-    def __repr__(self):
-        return f"Employer(name={self.name}, address={self.address})"
-
-
-class EmployeeW4:
-    def __init__(self, **kwargs):
-        self.line_1C: W4FilingStatus = kwargs.get("1C")  # filing status
-        self.line_2C: bool = kwargs.get("2C", False)  # Box 2C is checked
-        self.line_3: int or float = kwargs.get("3", 0)  # Claim dependent and other credits
-        self.line_4A: int or float = kwargs.get("4A", 0)  # Other income
-        self.line_4B: int or float = kwargs.get("4B", 0)  # Deductions
-        self.line_4C: int or float = kwargs.get("4C", 0)  # Extra withholdings
-        self.pay_periods_per_year: int = kwargs.get("pay_periods_per_year", 0)  # see Pub 15-T, Worksheet 1A, Table 3
-
-    def __repr__(self):
-        return f"EmployeeW4('1C'={self.line_1C}, '2C'={self.line_2C}, '3'={self.line_3}, 'pay_periods_per_year'={self.pay_periods_per_year})"
 
 
 class Employee:
@@ -153,22 +74,124 @@ class Employee:
         return f"Employee(name={self.name}, pay_rate={self.pay_rate})"
 
 
+class Employer:
+    def __init__(self, **kwargs):
+        self.name: str = kwargs.get("name")
+        self.ein: str = kwargs.get("ein")
+        self.business_id: str = kwargs.get("business_id")
+        self.address_line_1: str = kwargs.get("address_line_1")
+        self.address_line_2: str = kwargs.get("address_line_2")
+        self.address_line_3: str = kwargs.get("address_line_3")
+        self.payroll_day: int = kwargs.get("payroll_day")
+
+    @property
+    def address(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}, {self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}, {self.address_line_3}"
+        return address
+
+    @property
+    def address_multiline(self):
+        address = self.address_line_1
+        if self.address_line_2:
+            address = f"{address}\n{self.address_line_2}"
+        if self.address_line_3:
+            address = f"{address}\n{self.address_line_3}"
+        return address
+
+    @property
+    def payroll_day_name(self):
+        return calendar.day_name[self.payroll_day]
+
+    def __repr__(self):
+        return f"Employer(name={self.name}, address={self.address})"
+
+
+class EmployeeW4:
+    def __init__(self, **kwargs):
+        self.line_1C: W4FilingStatus = kwargs.get("1C")  # filing status
+        self.line_2C: bool = kwargs.get("2C", False)  # Box 2C is checked
+        self.line_3: int or float = kwargs.get("3", 0)  # Claim dependent and other credits
+        self.line_4A: int or float = kwargs.get("4A", 0)  # Other income
+        self.line_4B: int or float = kwargs.get("4B", 0)  # Deductions
+        self.line_4C: int or float = kwargs.get("4C", 0)  # Extra withholdings
+        self.pay_periods_per_year: int = kwargs.get("pay_periods_per_year", 0)  # see Pub 15-T, Worksheet 1A, Table 3
+
+    def __repr__(self):
+        return f"EmployeeW4('1C'={self.line_1C}, '2C'={self.line_2C}, '3'={self.line_3}, 'pay_periods_per_year'={self.pay_periods_per_year})"
+
+
+class TaxRates:
+    def __init__(self, **kwargs):
+        self.year: int = kwargs.get("year")
+        self.medicare_employee: int or float = kwargs.get("medicare_employee")  # percent value: ie 1.45%
+        self.medicare_company: int or float = kwargs.get("medicare_company")  # percent value: ie 1.45%
+        self.ss_employee: int or float = kwargs.get("ss_employee")  # percent value: ie 1.45%
+        self.ss_company: int or float = kwargs.get("ss_company")  # percent value: ie 1.45%
+        self.paid_fml: int or float = kwargs.get("paid_fml")  # percent value: ie 1.45%
+        self.federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
+        self.federal_unemployment_hour_cap: int = kwargs.get("federal_unemployment_hour_cap")
+        self.state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
+        self.federal_withholding: dict = kwargs.get("federal_withholding")
+
+    def __repr__(self):
+        return f"TaxRates(year={self.year})"
+
+    def get_federal_withholding_table(self, employee: Employee) -> list[dict]:
+        """Returns the appropriate section of the percentage method table based on the employee's W4 values."""
+        if employee.w4.line_2C:  # if multiple jobs is checked
+            if employee.w4.line_1C is W4FilingStatus.MARRIED:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Married"]
+            elif employee.w4.line_1C is W4FilingStatus.SINGLE:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Single"]
+            else:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Head"]
+        else:
+            if employee.w4.line_1C is W4FilingStatus.MARRIED:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Married"]
+            elif employee.w4.line_1C is W4FilingStatus.SINGLE:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Single"]
+            else:
+                return self.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Head"]
+
+
+class PaidHoliday:
+    def __init__(self, **kwargs):
+        self.name: str = kwargs.get("name")
+        self.date: Date = kwargs.get("date")
+
+    def __repr__(self):
+        return f"PaidHoliday(name='{self.name}', date='{self.date}')"
+
+    def as_dictionary(self):
+        """Returns the PaidHoliday data as a dictionary. (so it can be written to json)."""
+        return {"Name": self.name, "Date": self.date.isoformat()}
+
+    def populate_from_dictionary(self, in_dict):
+        """Populates the class data from a provided dictionary. (so it can be loaded from json)"""
+        self.name = in_dict["Name"]
+        self.date = Date.fromisoformat(in_dict["Date"])
+
+
 class TimeEntry:
     def __init__(self, **kwargs):
         self.date: Date = kwargs.get("date")
-        self.employee: str = kwargs.get("employee")
         self.tax_year: int = kwargs.get("tax_year")
         self.hours: int or float = kwargs.get("hours")
         self.pay_rate: int or float = kwargs.get("pay_rate")
         self.pay_type: PayType = kwargs.get("pay_type", PayType.REGULAR)
+        self.federal_withholding: int or float = kwargs.get("federal_withholding")  # optional federal withholding
         self.reimbursement: int or float = kwargs.get("reimbursement", 0)  # optional: milage or general reimbursements
         self.note: str = kwargs.get('note')
 
         self.tax_rates: TaxRates = None
 
     def __repr__(self):
-        return f"TimeEntry(date={self.date}, employee={self.employee}, tax_year={self.tax_year}, " \
-               f"hours={self.hours}, pay_rate={self.pay_rate}, pay_type={self.pay_type})"
+        return f"TimeEntry(date={self.date}, tax_year={self.tax_year}, hours={self.hours}, pay_rate={self.pay_rate}, " \
+               f"pay_type={self.pay_type}, federal_withholding={self.federal_withholding}, note={self.note})"
 
     @property
     def gross_pay(self) -> float:
@@ -284,12 +307,13 @@ class TimeEntry:
         """Returns the TimeEntry data as a dictionary. (so it can be written to json)."""
         out_dict = {
                 "Date": self.date.isoformat(),
-                "Employee": self.employee,
                 "TaxYear": self.tax_year,
                 "Hours": self.hours,
                 "PayRate": self.pay_rate,
                 "PayType": self.pay_type.value,
                 }
+        if self.federal_withholding is not None:
+            out_dict["FederalWithholding"] = self.federal_withholding
         if self.reimbursement:
             out_dict["Reimbursement"] = self.reimbursement
         if self.note:
@@ -299,11 +323,11 @@ class TimeEntry:
     def populate_from_dictionary(self, in_dict):
         """Populates the class data from a provided dictionary. (so it can be loaded from json)"""
         self.date = Date.fromisoformat(in_dict["Date"])
-        self.employee = in_dict["Employee"]
         self.tax_year = in_dict["TaxYear"]
         self.hours = in_dict["Hours"]
         self.pay_rate = in_dict["PayRate"]
         self.pay_type = PayType(in_dict["PayType"])
+        self.federal_withholding = in_dict.get("FederalWithholding")
         self.reimbursement = in_dict.get("Reimbursement", 0)  # this is an optional field
         self.note = in_dict.get("Note")  # this is an optional field
 
@@ -391,6 +415,7 @@ class DataProvider:
             self.employer.address_line_1 = employer["AddressLine1"]
             self.employer.address_line_2 = employer["AddressLine2"]
             self.employer.address_line_3 = employer["AddressLine3"]
+            self.employer.payroll_day = employer.get("PayrollDayOfWeek", 4)  # Friday is default
 
     def load_employee_data(self):
         """Reads all employee entries from the appdata directory and serializes them."""
@@ -527,7 +552,6 @@ class DataProvider:
 
         time_entry = TimeEntry()
         time_entry.date = date
-        time_entry.employee = employee.name
         time_entry.tax_year = rates.year
         time_entry.hours = hours
         time_entry.pay_rate = employee.pay_rate

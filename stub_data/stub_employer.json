@@ -4,5 +4,6 @@
   "BusinessID": "",
   "AddressLine1": "",
   "AddressLine2": "",
-  "AddressLine3": ""
+  "AddressLine3": "",
+  "PayrollDayOfWeek": 4
 }

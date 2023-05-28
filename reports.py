@@ -2,10 +2,13 @@ __author__ = 'Sean Kraft'
 
 from pathlib import Path
 from datetime import date as Date
+from datetime import timedelta
 
+from data_provider import TimeEntry
 from data_provider import Employee
 from data_provider import DataProvider
 from data_provider import PayType
+from data_provider import TaxRates
 from data_provider import W4FilingStatus
 from decimal import Decimal
 
@@ -39,11 +42,13 @@ class TimesheetValues:
         self.company_tax_contributions: float or int = 0
         self.company_total_costs: float or int = 0
 
+        self.federal_withholding: float or int = 0
+
         self.paid_time_off_hours: float or int = 0
         self.paid_holiday_hours: float or int = 0
         self.paid_sick_hours: float or int = 0
 
-    def add_time_entry(self, time_entry):
+    def add_time_entry(self, time_entry: TimeEntry):
         self.hours += time_entry.hours
         self.reimbursements += time_entry.reimbursement
         self.gross_pay += time_entry.gross_pay
@@ -60,6 +65,9 @@ class TimesheetValues:
         self.company_tax_contributions += time_entry.company_tax_contributions
         self.company_total_costs += time_entry.company_total_costs
 
+        if time_entry.federal_withholding:
+            self.federal_withholding += time_entry.federal_withholding
+
         if time_entry.pay_type is PayType.PAID_TIME_OFF:
             self.paid_time_off_hours += time_entry.hours
         if time_entry.pay_type is PayType.PAID_HOLIDAY:
@@ -68,12 +76,63 @@ class TimesheetValues:
             self.paid_sick_hours += time_entry.hours
 
 
+def get_first_payday_of_year(year: int, payroll_day_of_week: int = 4):
+    """Returns the first payroll date of the provided year."""
+    year_start = Date(year, 1, 1)
+    first_payday = year_start - timedelta(days=(Date.weekday(year_start) - payroll_day_of_week))
+    if first_payday.year < year_start.year:
+        first_payday += timedelta(weeks=1)
+    return first_payday
+
+
+def calculate_federal_withholding(gross_pay: float, employee: Employee, tax_rates: TaxRates) -> float:
+    """Calculates the federal withholding for a SINGLE PAY PERIOD (if the employee provided a W4).
+    this procedure comes from Pub 15-T, Worksheet 1A. This function assumes a 2020 or later W4 form."""
+    if employee.w4 is None:
+        return 0
+
+    # step 1
+    line_1c = gross_pay * employee.w4.pay_periods_per_year
+    line_1e = line_1c + employee.w4.line_4A
+    if employee.w4.line_2C:
+        line_1g = 0
+    else:
+        married_rate = tax_rates.federal_withholding["Worksheet1A_1G_Married"]
+        not_married_rate = tax_rates.federal_withholding["Worksheet1A_1G_NotMarried"]
+        line_1g = married_rate if employee.w4.line_1C is W4FilingStatus.MARRIED else not_married_rate
+    line_1h = line_1g + employee.w4.line_4B
+    adjusted_annual_wage_amount = max(0, (line_1e - line_1h))  # negative values should be 0
+
+    # step 2
+    withholding_table = tax_rates.get_federal_withholding_table(employee)
+    withholding_row = None
+    for row in withholding_table:
+        if row["A"] <= adjusted_annual_wage_amount < row["B"]:
+            withholding_row = row
+            break
+    line_2e = adjusted_annual_wage_amount - withholding_row["A"]
+    line_2f = line_2e * (withholding_row["D"] / 100)
+    line_2g = withholding_row["C"] + line_2f
+    tentative_withholding_amount = line_2g / employee.w4.pay_periods_per_year
+
+    # step 3
+    line_3b = employee.w4.line_3 / employee.w4.pay_periods_per_year
+    line_3c = max(0, (tentative_withholding_amount - line_3b))
+
+    # step 4
+    final_withholding = line_3c + employee.w4.line_4C
+    return round(final_withholding, 2)
+
+
 class Timesheet:
     def __init__(self, data: DataProvider, employee: Employee, start_date: Date, end_date: Date):
         self.data_provider = data
         self.employee = employee
+        self.employer = self.data_provider.employer
         self.start_date = start_date
         self.end_date = end_date
+
+        self.federal_withholding_amount = 0
 
         self.timesheet = TimesheetValues()
         self.timesheet_ytd = TimesheetValues()
@@ -81,86 +140,53 @@ class Timesheet:
         self.calculate()
 
     def calculate(self):
+        tax_rates = self.data_provider.get_tax_rates(year=self.end_date.year)
+        time_entries = self.data_provider.get_worked_time_in_range(self.employee, self.start_date, self.end_date)
+
+        # timesheets must end on the employer payroll day of week
+        if Date.weekday(self.end_date) != self.employer.payroll_day:
+            raise ValueError(f"Timesheets must end on {self.employer.payroll_day_name} as defined in employer.json.")
+
+        # calculate federal withholding for this pay period (unless it's already been calculated)
+        timesheet_range = self.end_date - self.start_date
+        if timesheet_range > timedelta(days=6) or timesheet_range < timedelta(days=5):
+            print("WARNING: Unable to calculate federal withholding for non-weekly timesheets.")
+        else:
+            last_entry = time_entries[-1]
+            if last_entry.federal_withholding is None:
+                gross_pay = sum([entry.gross_pay for entry in time_entries])
+                last_entry.federal_withholding = calculate_federal_withholding(gross_pay, self.employee, tax_rates)
+                self.employee._time_entries_dirty = True
+                self.data_provider.save()
+                print(f"Added ${last_entry.federal_withholding:.2f} of Federal Withholding to {last_entry.date}.")
+
         # tally all year to date time entries
-        year_start = Date(self.end_date.year, 1, 1)
+        year_start = get_first_payday_of_year(self.end_date.year, self.employer.payroll_day) - timedelta(days=6)
         ytd_time_entries = self.data_provider.get_worked_time_in_range(self.employee, year_start, self.end_date)
         for entry in ytd_time_entries:
             entry.tax_rates = self.data_provider.get_tax_rates(year=entry.tax_year)
             self.timesheet_ytd.add_time_entry(entry)
 
         # tally all time entries in provided time range
-        time_entries = self.data_provider.get_worked_time_in_range(self.employee, self.start_date, self.end_date)
         for entry in time_entries:
             entry.tax_rates = self.data_provider.get_tax_rates(year=entry.tax_year)
             self.timesheet.add_time_entry(entry)
 
         # apply federal unemployment hour cap
-        tax_rates = self.data_provider.get_tax_rates(year=self.end_date.year)
         if self.timesheet_ytd.gross_pay > tax_rates.federal_unemployment_hour_cap:
             gross_overage = self.timesheet_ytd.gross_pay - tax_rates.federal_unemployment_hour_cap
-            pay_before_overage = self.timesheet.gross_pay - gross_overage
-            pay_before_overage = pay_before_overage if pay_before_overage > 0 else 0
+            pay_before_overage = max(0, (self.timesheet.gross_pay - gross_overage))
             rate = tax_rates.federal_unemployment / 100
             self.timesheet.federal_unemployment = pay_before_overage * rate
             self.timesheet_ytd.federal_unemployment = tax_rates.federal_unemployment_hour_cap * rate
 
-        # calculate the federal withholding (if the employee filled out the optional W4 requesting withholding)
-        # this procedure comes from Pub 15-T, Worksheet 1A. This function assumes a 2020 or later W4 form
-        if self.employee.w4 is not None:
-            # step 1
-            line_1c = self.timesheet.gross_pay * self.employee.w4.pay_periods_per_year
-            line_1e = line_1c + self.employee.w4.line_4A
-            if self.employee.w4.line_2C:
-                line_1g = 0
-            else:
-                married_rate = tax_rates.federal_withholding["Worksheet1A_1G_Married"]
-                not_married_rate = tax_rates.federal_withholding["Worksheet1A_1G_NotMarried"]
-                line_1g = married_rate if self.employee.w4.line_1C is W4FilingStatus.MARRIED else not_married_rate
-            line_1h = line_1g + self.employee.w4.line_4B
-            adjusted_annual_wage_amount = max(0, (line_1e - line_1h))  # negative values should be 0
-            print(f"Adjusted Annual Wage Amount: ${adjusted_annual_wage_amount:,.2f}")
-
-            # step 2
-            withholding_table = self.get_federal_withholding_table(tax_rates)
-            withholding_row = None
-            for row in withholding_table:
-                if row["A"] <= adjusted_annual_wage_amount < row["B"]:
-                    withholding_row = row
-                    break
-            line_2e = adjusted_annual_wage_amount - withholding_row["A"]
-            line_2f = line_2e * (withholding_row["D"] / 100)
-            line_2g = withholding_row["C"] + line_2f
-            tentative_withholding_amount = line_2g / self.employee.w4.pay_periods_per_year
-            print(f"Tentative Withholding Amount: ${tentative_withholding_amount:,.2f}")
-
-            # step 3
-            line_3b = self.employee.w4.line_3 / self.employee.w4.pay_periods_per_year
-            line_3c = max(0, (tentative_withholding_amount - line_3b))
-
-            # step 4
-            final_withholding = line_3c + self.employee.w4.line_4C
-            print(f"Final Withholding Amount: ${final_withholding:,.2f}")
-
-    def get_federal_withholding_amount(self, tax_rates):
-        # TODO move the logic here
-        pass
-
-    def get_federal_withholding_table(self, tax_rates):
-        """Returns the appropriate section of the percentage method table based on the employee's W4 values."""
-        if self.employee.w4.line_2C:  # if multiple jobs is checked
-            if self.employee.w4.line_1C is W4FilingStatus.MARRIED:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Married"]
-            elif self.employee.w4.line_1C is W4FilingStatus.SINGLE:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Single"]
-            else:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsChecked"]["Head"]
-        else:
-            if self.employee.w4.line_1C is W4FilingStatus.MARRIED:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Married"]
-            elif self.employee.w4.line_1C is W4FilingStatus.SINGLE:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Single"]
-            else:
-                return tax_rates.federal_withholding["PercentageTables"]["MultipleJobsNotChecked"]["Head"]
+        # subtract federal withholding from net pay and check amount
+        self.timesheet.employee_taxes_withheld += self.timesheet.federal_withholding
+        self.timesheet.net_pay -= self.timesheet.federal_withholding
+        self.timesheet.check_amount -= self.timesheet.federal_withholding
+        self.timesheet_ytd.employee_taxes_withheld += self.timesheet_ytd.federal_withholding
+        self.timesheet_ytd.net_pay -= self.timesheet_ytd.federal_withholding
+        self.timesheet_ytd.check_amount -= self.timesheet_ytd.federal_withholding
 
     def to_pdf(self, file_path: Path):
         f_size = Decimal(8)
@@ -293,8 +319,13 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.federal_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 13: Tax: State Unemployment
-        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
+        # row 13: Tax: Federal Withholding and State Unemployment
+        ts_table.add(TableCell(Paragraph("Federal Withholding", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(F"${self.timesheet.federal_withholding:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(F"${self.timesheet_ytd.federal_withholding:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph("WA State Unemployment", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.state_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
@@ -428,9 +459,11 @@ class Timesheet:
         print(f' - Medicare Employee: ${round(self.timesheet.medicare_employee, 2)}')
         print(f' - Social Security Employee: ${round(self.timesheet.ss_employee, 2)}')
         print(f' - WA Paid Family and Medical Leave: ${round(self.timesheet.paid_fml, 2)}')
+        print(f' - Federal Withholding: ${self.timesheet.federal_withholding:,.2f}')
         print(f' - Total Taxes Withheld: ${round(self.timesheet.employee_taxes_withheld, 2)}')
-        print(f'Milage and General Reimbursements: ${round(self.timesheet.reimbursements, 2)}')
         print(f'Net Pay: ${round(self.timesheet.net_pay, 2)}')
+        print(f'Milage and General Reimbursements: ${round(self.timesheet.reimbursements, 2)}')
+        print(f'Check Amount: ${self.timesheet.check_amount:,.2f}')
         print('Employer Taxes:')
         print(f' - Medicare Employer: ${round(self.timesheet.medicare_company, 2)}')
         print(f' - Social Security Employer: ${round(self.timesheet.ss_company, 2)}')
@@ -446,9 +479,11 @@ class Timesheet:
         print(f' - Medicare Employee: ${round(self.timesheet_ytd.medicare_employee, 2)}')
         print(f' - Social Security Employee: ${round(self.timesheet_ytd.ss_employee, 2)}')
         print(f' - WA Paid Family and Medical Leave: ${round(self.timesheet_ytd.paid_fml, 2)}')
+        print(f' - Federal Withholding: ${self.timesheet_ytd.federal_withholding:,.2f}')
         print(f' - Total Taxes Withheld: ${round(self.timesheet_ytd.employee_taxes_withheld, 2)}')
-        print(f'Milage and General Reimbursements: ${round(self.timesheet_ytd.reimbursements, 2)}')
         print(f'Net Pay: ${round(self.timesheet_ytd.net_pay, 2)}')
+        print(f'Milage and General Reimbursements: ${round(self.timesheet_ytd.reimbursements, 2)}')
+        print(f'Check Amount: ${self.timesheet_ytd.check_amount:,.2f}')
         print('Employer Taxes:')
         print(f' - Medicare Employer: ${round(self.timesheet_ytd.medicare_company, 2)}')
         print(f' - Social Security Employer: ${round(self.timesheet_ytd.ss_company, 2)}')
