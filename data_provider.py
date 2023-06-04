@@ -127,18 +127,66 @@ class EmployeeW4:
 class TaxRates:
     def __init__(self, **kwargs):
         self.year: int = kwargs.get("year")
-        self.medicare_employee: int or float = kwargs.get("medicare_employee")  # percent value: ie 1.45%
-        self.medicare_company: int or float = kwargs.get("medicare_company")  # percent value: ie 1.45%
-        self.ss_employee: int or float = kwargs.get("ss_employee")  # percent value: ie 1.45%
-        self.ss_company: int or float = kwargs.get("ss_company")  # percent value: ie 1.45%
-        self.paid_fml: int or float = kwargs.get("paid_fml")  # percent value: ie 1.45%
-        self.federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
-        self.federal_unemployment_hour_cap: int = kwargs.get("federal_unemployment_hour_cap")
-        self.state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
+        self._medicare_employee: int or float = kwargs.get("medicare_employee")  # percent value: ie 1.45%
+        self._medicare_company: int or float = kwargs.get("medicare_company")  # percent value: ie 1.45%
+        self._ss_employee: int or float = kwargs.get("ss_employee")  # percent value: ie 1.45%
+        self._ss_company: int or float = kwargs.get("ss_company")  # percent value: ie 1.45%
+        self.ss_taxable_max: int or float = kwargs.get("ss_taxable_max")  # amount of gross wages to cap at
+        self._wa_paid_fml_employee: int or float = kwargs.get("paid_fml_employee")  # percent value: ie 1.45%
+        self._wa_paid_fml_company: int or float = kwargs.get("paid_fml_company")  # percent value: ie 1.45%
+        self._wa_cares: int or float = kwargs.get("wa_cares")  # percent value: ie 1.45%
+        self._federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
+        self.federal_unemployment_taxable_max: int = kwargs.get("federal_unemployment_taxable_max")
+        self._state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
         self.federal_withholding: dict = kwargs.get("federal_withholding")
 
     def __repr__(self):
         return f"TaxRates(year={self.year})"
+
+    @property
+    def medicare_employee(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._medicare_employee / 100
+
+    @property
+    def medicare_company(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._medicare_company / 100
+
+    @property
+    def ss_employee(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._ss_employee / 100
+
+    @property
+    def ss_company(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._ss_company / 100
+
+    @property
+    def wa_paid_fml_employee(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._wa_paid_fml_employee / 100
+
+    @property
+    def wa_paid_fml_company(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._wa_paid_fml_company / 100
+
+    @property
+    def wa_cares(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._wa_cares / 100
+
+    @property
+    def federal_unemployment(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._federal_unemployment / 100
+
+    @property
+    def state_unemployment(self):
+        """The decimal version of the percentage for use in calculations."""
+        return self._state_unemployment / 100
 
     def get_federal_withholding_table(self, employee: Employee) -> list[dict]:
         """Returns the appropriate section of the percentage method table based on the employee's W4 values."""
@@ -208,7 +256,7 @@ class TimeEntry:
         try:
             return self._medicare_employee
         except AttributeError:
-            self._medicare_employee = self.gross_pay * (self.tax_rates.medicare_employee / 100)
+            self._medicare_employee = self.gross_pay * self.tax_rates.medicare_employee
             return self._medicare_employee
 
     @property
@@ -217,7 +265,7 @@ class TimeEntry:
         try:
             return self._medicare_company
         except AttributeError:
-            self._medicare_company = self.gross_pay * (self.tax_rates.medicare_company / 100)
+            self._medicare_company = self.gross_pay * self.tax_rates.medicare_company
             return self._medicare_company
 
     @property
@@ -226,7 +274,7 @@ class TimeEntry:
         try:
             return self._ss_employee
         except AttributeError:
-            self._ss_employee = self.gross_pay * (self.tax_rates.ss_employee / 100)
+            self._ss_employee = self.gross_pay * self.tax_rates.ss_employee
             return self._ss_employee
 
     @property
@@ -235,17 +283,39 @@ class TimeEntry:
         try:
             return self._ss_company
         except AttributeError:
-            self._ss_company = self.gross_pay * (self.tax_rates.ss_company / 100)
+            self._ss_company = self.gross_pay * self.tax_rates.ss_company
             return self._ss_company
 
     @property
-    def paid_fml(self) -> float:
-        """Returns the WA paid family and medical leave withholding amount. (self.tax_rates must be populated)"""
+    def wa_paid_fml_employee(self) -> float:
+        """Returns the employee portion of the WA paid family and medical leave withholding amount.
+        NOTE that this is a percentage (72.76% for 2023) of the total premium and for companies
+        with less than 50 employees, is the only amount that needs to be withheld."""
         try:
-            return self._paid_fml
+            return self._wa_paid_fml_employee
         except AttributeError:
-            self._paid_fml = self.gross_pay * (self.tax_rates.paid_fml / 100)
-            return self._paid_fml
+            self._wa_paid_fml_employee = self.gross_pay * self.tax_rates.wa_paid_fml_employee
+            return self._wa_paid_fml_employee
+
+    @property
+    def wa_paid_fml_company(self) -> float:
+        """Returns the company portion of the WA paid family and medical leave withholding amount.
+        NOTE: This is optional for companies with less than 50 employees."""
+        try:
+            return self._wa_paid_fml_company
+        except AttributeError:
+            self._wa_paid_fml_company = self.gross_pay * self.tax_rates.wa_paid_fml_company
+            return self._wa_paid_fml_company
+
+    @property
+    def wa_cares(self) -> float:
+        """Returns the WA cares withholding amount (if date is after July 1, 2023)"""
+        try:
+            return self._wa_cares
+        except AttributeError:
+            start_day = Date(2023, 7, 1)  # this contribution goes into effect on July 1, 2023
+            self._wa_cares = self.gross_pay * self.tax_rates.wa_cares if self.date >= start_day else 0
+            return self._wa_cares
 
     @property
     def employee_taxes_withheld(self) -> float:
@@ -253,7 +323,10 @@ class TimeEntry:
         try:
             return self._employee_taxes_withheld
         except AttributeError:
-            self._employee_taxes_withheld = self.medicare_employee + self.ss_employee + self.paid_fml
+            self._employee_taxes_withheld = (self.medicare_employee +
+                                             self.ss_employee +
+                                             self.wa_paid_fml_employee +
+                                             self.wa_cares)
             return self._employee_taxes_withheld
 
     @property
@@ -276,7 +349,7 @@ class TimeEntry:
         try:
             return self._federal_unemployment
         except AttributeError:
-            self._federal_unemployment = self.gross_pay * (self.tax_rates.federal_unemployment / 100)
+            self._federal_unemployment = self.gross_pay * self.tax_rates.federal_unemployment
             return self._federal_unemployment
 
     @property
@@ -285,7 +358,7 @@ class TimeEntry:
         try:
             return self._state_unemployment
         except AttributeError:
-            self._state_unemployment = self.gross_pay * (self.tax_rates.state_unemployment / 100)
+            self._state_unemployment = self.gross_pay * self.tax_rates.state_unemployment
             return self._state_unemployment
 
     @property
@@ -295,6 +368,7 @@ class TimeEntry:
         except AttributeError:
             self._company_tax_contributions = (self.medicare_company +
                                                self.ss_company +
+                                               self.wa_paid_fml_company +
                                                self.federal_unemployment +
                                                self.state_unemployment)
             return self._company_tax_contributions
@@ -380,14 +454,17 @@ class DataProvider:
             for rates in tax_rates:
                 tax_rate = TaxRates()
                 tax_rate.year = rates["TaxYear"]
-                tax_rate.medicare_employee = rates["MedicareEmployee"]
-                tax_rate.medicare_company = rates["MedicareCompany"]
-                tax_rate.ss_employee = rates["SocialSecurityEmployee"]
-                tax_rate.ss_company = rates["SocialSecurityCompany"]
-                tax_rate.paid_fml = rates["PaidFamilyMedicalLeave"]
-                tax_rate.federal_unemployment = rates["FederalUnemployment"]
-                tax_rate.federal_unemployment_hour_cap = rates["FederalUnemploymentHourCap"]
-                tax_rate.state_unemployment = rates["StateUnemployment"]
+                tax_rate._medicare_employee = rates["MedicareEmployee"]
+                tax_rate._medicare_company = rates["MedicareCompany"]
+                tax_rate._ss_employee = rates["SocialSecurityEmployee"]
+                tax_rate._ss_company = rates["SocialSecurityCompany"]
+                tax_rate.ss_taxable_max = rates["SocialSecurityTaxableMaximum"]
+                tax_rate._wa_paid_fml_employee = rates["WAPaidFamilyMedicalLeaveEmployee"]
+                tax_rate._wa_paid_fml_company = rates["WAPaidFamilyMedicalLeaveCompany"]
+                tax_rate._wa_cares = rates["WACares"]
+                tax_rate._federal_unemployment = rates["FederalUnemployment"]
+                tax_rate.federal_unemployment_taxable_max = rates["FederalUnemploymentTaxableMaximum"]
+                tax_rate._state_unemployment = rates["StateUnemployment"]
                 tax_rate.federal_withholding = rates["FederalWithholding"]
 
                 self.tax_rates.append(tax_rate)

@@ -31,12 +31,14 @@ class TimesheetValues:
         self.gross_pay: float or int = 0
         self.medicare_employee: float or int = 0
         self.ss_employee: float or int = 0
-        self.paid_fml: float or int = 0
+        self.wa_paid_fml_employee: float or int = 0
+        self.wa_cares: float or int = 0
         self.employee_taxes_withheld: float or int = 0
         self.net_pay: float or int = 0
         self.check_amount: float or int = 0
         self.medicare_company: float or int = 0
         self.ss_company: float or int = 0
+        self.wa_paid_fml_company: float or int = 0
         self.federal_unemployment: float or int = 0
         self.state_unemployment: float or int = 0
         self.company_tax_contributions: float or int = 0
@@ -54,12 +56,14 @@ class TimesheetValues:
         self.gross_pay += time_entry.gross_pay
         self.medicare_employee += time_entry.medicare_employee
         self.ss_employee += time_entry.ss_employee
-        self.paid_fml += time_entry.paid_fml
+        self.wa_paid_fml_employee += time_entry.wa_paid_fml_employee
+        self.wa_cares += time_entry.wa_cares
         self.employee_taxes_withheld += time_entry.employee_taxes_withheld
         self.net_pay += time_entry.net_pay
         self.check_amount += time_entry.check_amount
         self.medicare_company += time_entry.medicare_company
         self.ss_company += time_entry.ss_company
+        self.wa_paid_fml_company += time_entry.wa_paid_fml_company
         self.federal_unemployment += time_entry.federal_unemployment
         self.state_unemployment += time_entry.state_unemployment
         self.company_tax_contributions += time_entry.company_tax_contributions
@@ -143,22 +147,26 @@ class Timesheet:
         tax_rates = self.data_provider.get_tax_rates(year=self.end_date.year)
         time_entries = self.data_provider.get_worked_time_in_range(self.employee, self.start_date, self.end_date)
 
+        if not time_entries:
+            print('WARNING: No time entries found in the provided date range.')
+
         # timesheets must end on the employer payroll day of week
         if Date.weekday(self.end_date) != self.employer.payroll_day:
             raise ValueError(f"Timesheets must end on {self.employer.payroll_day_name} as defined in employer.json.")
 
         # calculate federal withholding for this pay period (unless it's already been calculated)
         timesheet_range = self.end_date - self.start_date
-        if timesheet_range > timedelta(days=6) or timesheet_range < timedelta(days=5):
-            print("WARNING: Unable to calculate federal withholding for non-weekly timesheets.")
-        else:
-            last_entry = time_entries[-1]
-            if last_entry.federal_withholding is None:
-                gross_pay = sum([entry.gross_pay for entry in time_entries])
-                last_entry.federal_withholding = calculate_federal_withholding(gross_pay, self.employee, tax_rates)
-                self.employee._time_entries_dirty = True
-                self.data_provider.save()
-                print(f"Added ${last_entry.federal_withholding:.2f} of Federal Withholding to {last_entry.date}.")
+        if time_entries:
+            if timesheet_range > timedelta(days=6) or timesheet_range < timedelta(days=4):
+                print("WARNING: Unable to calculate federal withholding for non-weekly timesheets.")
+            else:
+                last_entry = time_entries[-1]
+                if last_entry.federal_withholding is None:
+                    gross_pay = sum([entry.gross_pay for entry in time_entries])
+                    last_entry.federal_withholding = calculate_federal_withholding(gross_pay, self.employee, tax_rates)
+                    self.employee._time_entries_dirty = True
+                    self.data_provider.save()
+                    print(f"Added ${last_entry.federal_withholding:.2f} of Federal Withholding to {last_entry.date}.")
 
         # tally all year to date time entries
         year_start = get_first_payday_of_year(self.end_date.year, self.employer.payroll_day) - timedelta(days=6)
@@ -173,12 +181,24 @@ class Timesheet:
             self.timesheet.add_time_entry(entry)
 
         # apply federal unemployment hour cap
-        if self.timesheet_ytd.gross_pay > tax_rates.federal_unemployment_hour_cap:
-            gross_overage = self.timesheet_ytd.gross_pay - tax_rates.federal_unemployment_hour_cap
+        if self.timesheet_ytd.gross_pay > tax_rates.federal_unemployment_taxable_max:
+            gross_overage = self.timesheet_ytd.gross_pay - tax_rates.federal_unemployment_taxable_max
             pay_before_overage = max(0, (self.timesheet.gross_pay - gross_overage))
-            rate = tax_rates.federal_unemployment / 100
-            self.timesheet.federal_unemployment = pay_before_overage * rate
-            self.timesheet_ytd.federal_unemployment = tax_rates.federal_unemployment_hour_cap * rate
+            self.timesheet.federal_unemployment = pay_before_overage * tax_rates.federal_unemployment
+            self.timesheet_ytd.federal_unemployment = tax_rates.federal_unemployment_taxable_max * tax_rates.federal_unemployment
+
+        # apply social security taxable wages cap to social security and wa family medical leave withholdings
+        if self.timesheet_ytd.gross_pay > tax_rates.ss_taxable_max:
+            gross_overage = self.timesheet_ytd.gross_pay - tax_rates.ss_taxable_max
+            pay_before_overage = max(0, (self.timesheet.gross_pay - gross_overage))
+            self.timesheet.ss_employee = pay_before_overage * tax_rates.ss_employee
+            self.timesheet.ss_company = pay_before_overage * tax_rates.ss_company
+            self.timesheet_ytd.ss_employee = tax_rates.ss_taxable_max * tax_rates.ss_employee
+            self.timesheet_ytd.ss_company = tax_rates.ss_taxable_max * tax_rates.ss_company
+            self.timesheet.wa_paid_fml_employee = pay_before_overage * tax_rates.wa_paid_fml_employee
+            self.timesheet.wa_paid_fml_company = pay_before_overage * tax_rates.wa_paid_fml_company
+            self.timesheet_ytd.wa_paid_fml_employee = tax_rates.ss_taxable_max * tax_rates.wa_paid_fml_employee
+            self.timesheet_ytd.wa_paid_fml_company = tax_rates.ss_taxable_max * tax_rates.wa_paid_fml_company
 
         # subtract federal withholding from net pay and check amount
         self.timesheet.employee_taxes_withheld += self.timesheet.federal_withholding
@@ -195,7 +215,6 @@ class Timesheet:
         color_bdr = HexColor("6AA84F")
         color_red = HexColor("ED1C24")
         color_lt_green = HexColor("D9EAD3")
-        color_lt_gray = HexColor("C3C3C3")
 
         start_date = self.start_date.strftime("%b %d, %Y")
         end_date = self.end_date.strftime("%b %d, %Y")
@@ -205,11 +224,13 @@ class Timesheet:
         page = Page(width=PageSize.A4_LANDSCAPE.value[0], height=PageSize.A4_LANDSCAPE.value[1])
         doc.add_page(page)
         layout = SingleColumnLayout(page)
+        layout._vertical_margin_top = 50
+        layout._vertical_margin_bottom = 10
 
         layout.add(Paragraph(f"Earnings Statement : {end_date}", font=f_bold, font_size=Decimal(16)))
 
         # add timesheet table
-        ts_table = FlexibleColumnWidthTable(number_of_rows=27, number_of_columns=7)
+        ts_table = FlexibleColumnWidthTable(number_of_rows=28, number_of_columns=7)
 
         # # row 1: Address Titles
         text = Paragraph("Employee", font=f_bold, font_size=f_size_l)
@@ -306,11 +327,24 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.ss_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 12: Tax: Family Medical Leave and Federal Unemployment
+        # row 12: Tax: WA Paid Family Medical Leave
         ts_table.add(TableCell(Paragraph("WA Family Medical Leave", font_size=f_size), border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet.paid_fml:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet.wa_paid_fml_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
-        text = Paragraph(f"${self.timesheet_ytd.paid_fml:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        text = Paragraph(f"${self.timesheet_ytd.wa_paid_fml_employee:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
+        ts_table.add(TableCell(Paragraph("WA Family Medical Leave", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.wa_paid_fml_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.wa_paid_fml_company:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+
+        # row 13: Tax: WA Cares and Federal Unemployment
+        ts_table.add(TableCell(Paragraph("WA Cares", font_size=f_size), border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet.wa_cares:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
+        ts_table.add(TableCell(text, border_width=Decimal(0)))
+        text = Paragraph(f"${self.timesheet_ytd.wa_cares:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph("Federal Unemployment", font_size=f_size), border_width=Decimal(0)))
@@ -319,7 +353,7 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.federal_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 13: Tax: Federal Withholding and State Unemployment
+        # row 14: Tax: Federal Withholding and State Unemployment
         ts_table.add(TableCell(Paragraph("Federal Withholding", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(F"${self.timesheet.federal_withholding:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
@@ -332,14 +366,14 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.state_unemployment:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 14: BLANK
+        # row 15: BLANK
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
 
-        # row 15: Time Off Benefits: Title
+        # row 16: Time Off Benefits: Title
         text = Paragraph("Time Off Benefits", font=f_bold, font_size=f_size_l)
         ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=7))
 
-        # row 16: Time Off Benefits: Headers
+        # row 17: Time Off Benefits: Headers
         text = Paragraph("Description", font=f_bold, font_size=f_size)
         ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
@@ -352,7 +386,7 @@ class Timesheet:
         text = Paragraph("Available", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
 
-        # row 17: Time Off Benefits: Paid Time Off
+        # row 18: Time Off Benefits: Paid Time Off
         ts_table.add(TableCell(Paragraph("Paid Time Off (Hours)", font_size=f_size), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_time_off_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -364,7 +398,7 @@ class Timesheet:
         text = Paragraph(f"{self.employee.paid_vacation - self.timesheet_ytd.paid_time_off_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 18: Time Off Benefits: Sick Time
+        # row 19: Time Off Benefits: Sick Time
         ts_table.add(TableCell(Paragraph("Paid Sick Time (Hours)", font_size=f_size), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_sick_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -376,7 +410,7 @@ class Timesheet:
         text = Paragraph(f"{self.employee.paid_sick - self.timesheet_ytd.paid_sick_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 19: Time Off Benefits: Paid Holidays
+        # row 20: Time Off Benefits: Paid Holidays
         ts_table.add(TableCell(Paragraph("Paid Holidays (Hours)", font_size=f_size), border_width=Decimal(0)))
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0)))
         text = Paragraph(f"{self.timesheet.paid_holiday_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -388,15 +422,15 @@ class Timesheet:
         text = Paragraph(f"{self.employee.paid_holidays - self.timesheet_ytd.paid_holiday_hours}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 20: BLANK
+        # row 21: BLANK
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=7))
 
-        # row 21: Summary: Title
+        # row 22: Summary: Title
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         text = Paragraph("Summary", font=f_bold, font_size=f_size_l)
         ts_table.add(TableCell(text, border_top=False, border_right=False, border_left=False, border_bottom=True, border_color=color_bdr, col_span=3))
 
-        # row 22: Summary: Headers
+        # row 23: Summary: Headers
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         text = Paragraph("Description", font=f_bold, font_size=f_size)
         ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3), padding_bottom=Decimal(3)))
@@ -405,7 +439,7 @@ class Timesheet:
         text = Paragraph("Year To Date", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0), padding_top=Decimal(3)))
 
-        # row 23: Summary: Gross Earnings
+        # row 24: Summary: Gross Earnings
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Gross Pay", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -413,7 +447,7 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.gross_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 24: Summary: Employee Taxes Withheld
+        # row 25: Summary: Employee Taxes Withheld
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Employee Taxes Withheld", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.employee_taxes_withheld:,.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
@@ -421,7 +455,7 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.employee_taxes_withheld:,.2f}", font_size=f_size, font_color=color_red, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 25: Summary: Net Pay
+        # row 26: Summary: Net Pay
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Net Pay", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.net_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -429,7 +463,7 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.net_pay:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 26: Summary: Reimbursements
+        # row 27: Summary: Reimbursements
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Reimbursements", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.reimbursements:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -437,7 +471,7 @@ class Timesheet:
         text = Paragraph(f"${self.timesheet_ytd.reimbursements:,.2f}", font_size=f_size, horizontal_alignment=Alignment.RIGHT)
         ts_table.add(TableCell(text, border_width=Decimal(0)))
 
-        # row 27: Summary: Check Amount
+        # row 28: Summary: Check Amount
         ts_table.add(TableCell(Paragraph(""), border_width=Decimal(0), col_span=4))
         ts_table.add(TableCell(Paragraph("Check Amount", font_size=f_size), border_width=Decimal(0)))
         text = Paragraph(f"${self.timesheet.check_amount:,.2f}", font=f_bold, font_size=f_size, horizontal_alignment=Alignment.RIGHT)
@@ -452,45 +486,49 @@ class Timesheet:
         print(f"{file_path} saved.")
 
     def print_timesheet(self):
-        print('--THIS PAY PERIOD--')
-        print(f'Hours: {self.timesheet.hours}')
-        print(f'Total Gross Pay: ${round(self.timesheet.gross_pay, 2)}')
+        print("--THIS PAY PERIOD--")
+        print(f"Hours: {self.timesheet.hours}")
+        print(f'Total Gross Pay: ${self.timesheet.gross_pay:,.2f}')
         print('Employee Taxes:')
-        print(f' - Medicare Employee: ${round(self.timesheet.medicare_employee, 2)}')
-        print(f' - Social Security Employee: ${round(self.timesheet.ss_employee, 2)}')
-        print(f' - WA Paid Family and Medical Leave: ${round(self.timesheet.paid_fml, 2)}')
+        print(f' - Medicare Employee: ${self.timesheet.medicare_employee:,.2f}')
+        print(f' - Social Security Employee: ${self.timesheet.ss_employee:,.2f}')
+        print(f' - WA Paid Family and Medical Leave: ${self.timesheet.wa_paid_fml_employee:,.2f}')
+        print(f' - WA Cares: ${self.timesheet.wa_cares:,.2f}')
         print(f' - Federal Withholding: ${self.timesheet.federal_withholding:,.2f}')
-        print(f' - Total Taxes Withheld: ${round(self.timesheet.employee_taxes_withheld, 2)}')
-        print(f'Net Pay: ${round(self.timesheet.net_pay, 2)}')
-        print(f'Milage and General Reimbursements: ${round(self.timesheet.reimbursements, 2)}')
+        print(f' - Total Taxes Withheld: ${self.timesheet.employee_taxes_withheld:,.2f}')
+        print(f'Net Pay: ${self.timesheet.net_pay:,.2f}')
+        print(f'Milage and General Reimbursements: ${self.timesheet.reimbursements:,.2f}')
         print(f'Check Amount: ${self.timesheet.check_amount:,.2f}')
         print('Employer Taxes:')
-        print(f' - Medicare Employer: ${round(self.timesheet.medicare_company, 2)}')
-        print(f' - Social Security Employer: ${round(self.timesheet.ss_company, 2)}')
-        print(f' - Federal Unemployment: ${round(self.timesheet.federal_unemployment, 2)}')
-        print(f' - WA State Unemployment: ${round(self.timesheet.state_unemployment, 2)}')
-        print(f' - Employer Tax Contributions: ${round(self.timesheet.company_tax_contributions, 2)}')
-        print(f'Employer Total Costs: ${round(self.timesheet.company_total_costs, 2)}')
+        print(f' - Medicare Employer: ${self.timesheet.medicare_company:,.2f}')
+        print(f' - Social Security Employer: ${self.timesheet.ss_company:,.2f}')
+        print(f' - WA Paid Family and Medical Leave: ${self.timesheet.wa_paid_fml_company:,.2f}')
+        print(f' - Federal Unemployment: ${self.timesheet.federal_unemployment:,.2f}')
+        print(f' - WA State Unemployment: ${self.timesheet.state_unemployment:,.2f}')
+        print(f' - Employer Tax Contributions: ${self.timesheet.company_tax_contributions:,.2f}')
+        print(f'Employer Total Costs: ${self.timesheet.company_total_costs:,.2f}')
 
         print('\n--YEAR TO DATE--')
         print(f'Hours: {self.timesheet_ytd.hours}')
-        print(f'Total Gross Pay: ${round(self.timesheet_ytd.gross_pay, 2)}')
+        print(f'Total Gross Pay: ${self.timesheet_ytd.gross_pay:,.2f}')
         print('Employee Taxes:')
-        print(f' - Medicare Employee: ${round(self.timesheet_ytd.medicare_employee, 2)}')
-        print(f' - Social Security Employee: ${round(self.timesheet_ytd.ss_employee, 2)}')
-        print(f' - WA Paid Family and Medical Leave: ${round(self.timesheet_ytd.paid_fml, 2)}')
+        print(f' - Medicare Employee: ${self.timesheet_ytd.medicare_employee:,.2f}')
+        print(f' - Social Security Employee: ${self.timesheet_ytd.ss_employee:,.2f}')
+        print(f' - WA Paid Family and Medical Leave: ${self.timesheet_ytd.wa_paid_fml_employee:,.2f}')
+        print(f' - WA Cares: ${self.timesheet_ytd.wa_cares:,.2f}')
         print(f' - Federal Withholding: ${self.timesheet_ytd.federal_withholding:,.2f}')
-        print(f' - Total Taxes Withheld: ${round(self.timesheet_ytd.employee_taxes_withheld, 2)}')
-        print(f'Net Pay: ${round(self.timesheet_ytd.net_pay, 2)}')
-        print(f'Milage and General Reimbursements: ${round(self.timesheet_ytd.reimbursements, 2)}')
+        print(f' - Total Taxes Withheld: ${self.timesheet_ytd.employee_taxes_withheld:,.2f}')
+        print(f'Net Pay: ${self.timesheet_ytd.net_pay:,.2f}')
+        print(f'Milage and General Reimbursements: ${self.timesheet_ytd.reimbursements:,.2f}')
         print(f'Check Amount: ${self.timesheet_ytd.check_amount:,.2f}')
         print('Employer Taxes:')
-        print(f' - Medicare Employer: ${round(self.timesheet_ytd.medicare_company, 2)}')
-        print(f' - Social Security Employer: ${round(self.timesheet_ytd.ss_company, 2)}')
-        print(f' - Federal Unemployment: ${round(self.timesheet_ytd.federal_unemployment, 2)}')
-        print(f' - WA State Unemployment: ${round(self.timesheet_ytd.state_unemployment, 2)}')
-        print(f' - Employer Tax Contributions: ${round(self.timesheet_ytd.company_tax_contributions, 2)}')
-        print(f'Employer Total Costs: ${round(self.timesheet_ytd.company_total_costs, 2)}')
+        print(f' - Medicare Employer: ${self.timesheet_ytd.medicare_company:,.2f}')
+        print(f' - Social Security Employer: ${self.timesheet_ytd.ss_company:,.2f}')
+        print(f' - WA Paid Family and Medical Leave: ${self.timesheet_ytd.wa_paid_fml_company:,.2f}')
+        print(f' - Federal Unemployment: ${self.timesheet_ytd.federal_unemployment:,.2f}')
+        print(f' - WA State Unemployment: ${self.timesheet_ytd.state_unemployment:,.2f}')
+        print(f' - Employer Tax Contributions: ${self.timesheet_ytd.company_tax_contributions:,.2f}')
+        print(f'Employer Total Costs: ${self.timesheet_ytd.company_total_costs:,.2f}')
 
         print('\n--PAID TIME OFF--')
         print(f'Paid Time Off Used To-Date (hours): {self.timesheet_ytd.paid_time_off_hours}')

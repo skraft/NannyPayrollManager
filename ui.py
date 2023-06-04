@@ -318,7 +318,9 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.check_for_holidays(self.dte_time_4, self.cbx_time_4, self.lne_time_4)
         self.check_for_holidays(self.dte_time_5, self.cbx_time_5, self.lne_time_5)
 
-        # autofill timesheet
+        # autofill timesheet date range
+        # TODO this should be based on the employer's payroll day of week value
+        # TODO this should encompass the entire week, not just 5 days
         self.dte_timesheet_start.setDate(self.last_monday)
         self.dte_timesheet_end.setDate(self.last_monday.addDays(4))
         self.update_timesheet_path()
@@ -471,7 +473,6 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
     def on_save(self):
         """Collects the data from the Enter Time fields and writes them to disk for the selected employee."""
         # if any of the chosen dates overlap existing time entries, ask the user if they want to proceed
-        # TODO check if any date widgets share a date and warn about overlaps
         overlaps_to_check = []
         if self.chk_time_1.isChecked():
             overlaps_to_check.append(self.date_1_overlap)

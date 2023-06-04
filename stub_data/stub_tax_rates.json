@@ -5,8 +5,12 @@
     "MedicareCompany": 0,
     "SocialSecurityEmployee": 0,
     "SocialSecurityCompany": 0,
-    "PaidFamilyMedicalLeave": 0,
+    "SocialSecurityTaxableMaximum": 0,
+    "WAPaidFamilyMedicalLeaveEmployee": 0,
+    "WAPaidFamilyMedicalLeaveCompany": 0,
+    "WACares": 0,
     "FederalUnemployment": 0,
+    "FederalUnemploymentTaxableMaximum": 0,
     "StateUnemployment": 0,
     "FederalWithholding":
     {
