@@ -21,3 +21,6 @@ EMPLOYEES_DIR = APP_DATA_DIR / 'Employees'
 
 # default timesheet location
 TIMESHEET_DIR = Path.home() / "Downloads"
+
+# washington state EAMS standard occupational code
+EAMS_OCCUPATIONAL_CODE = "399011"  # Childcare Workers

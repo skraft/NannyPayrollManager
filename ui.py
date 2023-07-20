@@ -62,6 +62,14 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.spn_time_reimburse_5 = None
         self.lne_time_5 = None
         self.btn_save_time = None
+        self.dte_timesheet_start = None
+        self.dte_timesheet_end = None
+        self.lne_timesheet_path = None
+        self.btn_timesheet_path = None
+        self.btn_timesheet_save = None
+        self.cbx_quarter_year = None
+        self.cbx_quarter = None
+        self.lne_quarterly_path = None
 
         self.build_ui()
         self.populate_ui()
@@ -292,6 +300,34 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.btn_timesheet_save.clicked.connect(self.on_save_timesheet)
         lyo_timesheet.addWidget(self.btn_timesheet_save)
 
+        gbx_quarterly = QtWidgets.QGroupBox("Washington State Quarterly Report")
+        lyo_reports.addWidget(gbx_quarterly)
+        lyo_quarterly = QtWidgets.QVBoxLayout(gbx_quarterly)
+        lyo_quarterly_inputs = QtWidgets.QGridLayout()
+        lyo_quarterly.addLayout(lyo_quarterly_inputs)
+
+        lyo_quarterly_inputs.addWidget(QtWidgets.QLabel("Year:"), 0, 0)
+        self.cbx_quarter_year = QtWidgets.QComboBox()
+        self.cbx_quarter_year.currentIndexChanged.connect(self.update_quarterly_path)
+        lyo_quarterly_inputs.addWidget(self.cbx_quarter_year, 0, 1)
+        lyo_quarterly_inputs.addWidget(QtWidgets.QLabel("Quarter:"), 0, 2)
+        self.cbx_quarter = QtWidgets.QComboBox()
+        self.cbx_quarter.currentIndexChanged.connect(self.update_quarterly_path)
+        lyo_quarterly_inputs.addWidget(self.cbx_quarter, 0, 3)
+
+        lyo_quarterly_path = QtWidgets.QHBoxLayout()
+        lyo_quarterly.addLayout(lyo_quarterly_path)
+        self.lne_quarterly_path = QtWidgets.QLineEdit()
+        lyo_quarterly_path.addWidget(self.lne_quarterly_path)
+        btn_quarterly_path = QtWidgets.QPushButton("...")
+        btn_quarterly_path.setMaximumWidth(30)
+        btn_quarterly_path.clicked.connect(self.on_btn_quarterly_path)
+        lyo_quarterly_path.addWidget(btn_quarterly_path)
+
+        btn_quarterly_save = QtWidgets.QPushButton("Save Quarterly Report")
+        btn_quarterly_save.clicked.connect(self.on_save_quarterly)
+        lyo_quarterly.addWidget(btn_quarterly_save)
+
         spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
         lyo_reports.addItem(spacer)
 
@@ -324,6 +360,18 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.dte_timesheet_start.setDate(self.last_monday)
         self.dte_timesheet_end.setDate(self.last_monday.addDays(4))
         self.update_timesheet_path()
+
+        years = [str(self.today.year() - 1),
+                 str(self.today.year()),
+                 str(self.today.year() + 1)]
+        self.cbx_quarter_year.addItems(years)
+        self.cbx_quarter_year.setCurrentIndex(1)
+        quarters = ["Quarter 1: Jan - Mar",
+                    "Quarter 2: Apr - June",
+                    "Quarter 3: July - Sept",
+                    "Quarter 4: Oct - Dec"]
+        self.cbx_quarter.addItems(quarters)
+        self.update_quarterly_path()
 
     def update_timesheet_path(self):
         employee = self.data.get_employee_from_name(self.cbx_employee.currentText())
@@ -549,4 +597,36 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         timesheet.to_pdf(timesheet_path)
 
         msg_box.setText("Timesheet saved.")
+        msg_box.exec()
+
+    def update_quarterly_path(self):
+        year = int(self.cbx_quarter_year.currentText())
+        quarter = self.cbx_quarter.currentIndex() + 1
+        quarterly_path = config.TIMESHEET_DIR / f"EAMSReport_{year}_Q{quarter}.csv"
+        self.lne_quarterly_path.setText(str(quarterly_path))
+
+    def on_btn_quarterly_path(self):
+        file_name = QtWidgets.QFileDialog.getSaveFileName(self, "Select Path", str(config.TIMESHEET_DIR), "CSV File (*.csv)")
+        if file_name[0]:
+            self.lne_quarterly_path.setText(file_name[0])
+
+    def on_save_quarterly(self):
+        path_str = self.lne_quarterly_path.text()
+        year = int(self.cbx_quarter_year.currentText())
+        quarter = self.cbx_quarter.currentIndex() + 1
+
+        # validate input
+        msg_box = QtWidgets.QMessageBox()
+        if not path_str:
+            msg_box.setText("ERROR: No path provided.")
+            msg_box.exec()
+            return
+
+        quarterly_path = Path(path_str)
+        quarterly_path.parent.mkdir(parents=True, exist_ok=True)
+
+        report = reports.EAMSQuarterlyReport(self.data, year, quarter)
+        report.to_csv(quarterly_path)
+
+        msg_box.setText("Quarterly report saved.")
         msg_box.exec()

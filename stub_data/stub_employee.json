@@ -1,5 +1,7 @@
 {
-  "Name": "",
+  "FirstName": "",
+  "LastName": "",
+  "MiddleName": "",
   "SSN": "000-00-0000",
   "PayRate": 0,
   "PaidVacationHoursPerYear": 0,

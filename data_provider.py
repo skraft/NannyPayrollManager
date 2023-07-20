@@ -8,6 +8,7 @@ from enum import Enum
 import config
 import shutil
 import json
+import re
 
 
 class DuplicateEntryError(Exception):
@@ -37,7 +38,9 @@ class W4FilingStatus(Enum):
 
 class Employee:
     def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name")
+        self.first_name: str = kwargs.get("first_name")
+        self.last_name: str = kwargs.get("last_name")
+        self.middle_name: str = kwargs.get("middle_name")
         self.ssn: str = kwargs.get("ssn")
         self.pay_rate: int or float = kwargs.get("pay_rate")
         self.paid_vacation: int or float = kwargs.get("paid_vacation")  # in hours
@@ -69,6 +72,11 @@ class Employee:
         if self.address_line_3:
             address = f"{address}\n{self.address_line_3}"
         return address
+
+    @property
+    def name(self):
+        name = f"{self.first_name} {self.middle_name} {self.last_name}"
+        return re.sub(" +", " ", name)
 
     def __repr__(self):
         return f"Employee(name={self.name}, pay_rate={self.pay_rate})"
@@ -507,7 +515,9 @@ class DataProvider:
                 emp = json.load(infile)
 
                 employee = Employee()
-                employee.name = emp["Name"]
+                employee.first_name = emp["FirstName"]
+                employee.last_name = emp["LastName"]
+                employee.middle_name = emp["MiddleName"]
                 employee.ssn = emp["SSN"]
                 employee.pay_rate = emp["PayRate"]
                 employee.paid_vacation = emp["PaidVacationHoursPerYear"]

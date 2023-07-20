@@ -3,7 +3,10 @@ __author__ = 'Sean Kraft'
 from pathlib import Path
 from datetime import date as Date
 from datetime import timedelta
+import csv
+import math
 
+import config
 from data_provider import TimeEntry
 from data_provider import Employee
 from data_provider import DataProvider
@@ -78,6 +81,20 @@ class TimesheetValues:
             self.paid_holiday_hours += time_entry.hours
         if time_entry.pay_type is PayType.PAID_SICK_TIME:
             self.paid_sick_hours += time_entry.hours
+
+
+class QuarterlyReportValues:
+    def __init__(self):
+        self.employee: Employee or None = None
+        self.hours: float or int = 0
+        self.gross_pay: float or int = 0
+
+    def __repr__(self):
+        return f"QuarterlyReportValues(employee={self.employee}, hours={self.hours}, gross_pay={self.gross_pay})"
+
+    def add_time_entry(self, time_entry: TimeEntry):
+        self.hours += time_entry.hours
+        self.gross_pay += time_entry.gross_pay
 
 
 def get_first_payday_of_year(year: int, payroll_day_of_week: int = 4):
@@ -485,7 +502,7 @@ class Timesheet:
             PDF.dumps(pdf_file, doc)
         print(f"{file_path} saved.")
 
-    def print_timesheet(self):
+    def to_console(self):
         print("--THIS PAY PERIOD--")
         print(f"Hours: {self.timesheet.hours}")
         print(f'Total Gross Pay: ${self.timesheet.gross_pay:,.2f}')
@@ -539,4 +556,84 @@ class Timesheet:
         print(f'Paid Sick Time Remaining (hours): {self.employee.paid_sick - self.timesheet_ytd.paid_sick_hours}')
 
 
+class EAMSQuarterlyReport:
+    """Generates reports for Washington State quarterly reporting in the EAMS tool."""
+    def __init__(self, data: DataProvider, year: int, quarter: int):
+        self.data_provider = data
+        self.employer = self.data_provider.employer
 
+        self.reports = []
+
+        self.year = year
+        self.start_date = None
+        self.end_date = None
+        self.get_date_range(quarter)
+        self.calculate()
+
+    def get_date_range(self, quarter):
+        """Populates start and end dates for the provided quarter of year."""
+        if quarter == 1:
+            self.start_date = Date(self.year, 1, 1)
+            self.end_date = Date(self.year, 3, 31)
+        elif quarter == 2:
+            self.start_date = Date(self.year, 4, 1)
+            self.end_date = Date(self.year, 6, 30)
+        elif quarter == 3:
+            self.start_date = Date(self.year, 7, 1)
+            self.end_date = Date(self.year, 9, 30)
+        elif quarter == 4:
+            self.start_date = Date(self.year, 10, 1)
+            self.end_date = Date(self.year, 12, 31)
+        else:
+            raise IOError(f"Provided 'quarter' value of '{quarter}' is invalid. Valid inputs: 1, 2, 3, or 4.")
+
+    def calculate(self):
+        """Builds a report for each employee from the current date range."""
+        self.reports = []
+
+        for employee in self.data_provider.employees:
+            time_entries = self.data_provider.get_worked_time_in_range(employee, self.start_date, self.end_date)
+            if not time_entries:
+                print(f'WARNING: No time entries found for {employee.name} in the provided date range.')
+
+            report = QuarterlyReportValues()
+            report.employee = employee
+            for time_entry in time_entries:
+                report.add_time_entry(time_entry)
+
+            self.reports.append(report)
+
+    def to_csv(self, file_path: Path):
+        """Writes the reports out to csv format. This is useful for importing directly into the EAMS website."""
+        rows = []
+        for report in self.reports:
+            row = [report.employee.ssn,
+                   report.employee.last_name,
+                   report.employee.first_name,
+                   report.employee.middle_name,
+                   "",  # suffix
+                   math.ceil(report.hours),  # EAMS tool requires whole numbers, no decimals
+                   report.gross_pay,
+                   config.EAMS_OCCUPATIONAL_CODE]
+            rows.append(row)
+
+        # writing to csv file
+        with open(file_path, "w", newline="") as csvfile:
+            # creating a csv writer object
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerows(rows)
+
+    def to_console(self):
+        """Prints the reports."""
+        for report in self.reports:
+            print(f"{report.employee.ssn}, "
+                  f"{report.employee.last_name}, "
+                  f"{report.employee.first_name}, "
+                  f"{report.employee.middle_name}, "
+                  f"{report.hours}, "
+                  f"{report.gross_pay}, "
+                  f"{config.EAMS_OCCUPATIONAL_CODE}")
+
+
+val = 3.1
+print(math.ceil(val))
