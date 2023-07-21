@@ -19,6 +19,7 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.data = data_provider
         self.today = QtCore.QDate.currentDate()
         self.last_monday = self.today.addDays(-self.today.dayOfWeek() + 1)
+        self.tax_rates = self.data.get_tax_rates(self.today.year())
 
         self.setObjectName("NannyPayrollManager")
         self.setWindowTitle(self.UI_NAME)
@@ -29,6 +30,7 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.date_3_overlap = False
         self.date_4_overlap = False
         self.date_5_overlap = False
+        self.milage_reimbursement = 0
 
         self.cbx_employee = None
         self.chk_time_1 = None
@@ -75,7 +77,7 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.populate_ui()
 
     def build_ui(self):
-        self.resize(993, 460)
+        self.resize(993, 360)
 
         # main widget and layout
         wdg_main = QtWidgets.QWidget()
@@ -99,9 +101,12 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         lyo_body = QtWidgets.QHBoxLayout()
         lyo_main.addLayout(lyo_body)
 
+        lyo_time = QtWidgets.QVBoxLayout()
+        lyo_body.addLayout(lyo_time)
+
         # enter time group box
         gbox_enter_time = QtWidgets.QGroupBox("Enter Time")
-        lyo_body.addWidget(gbox_enter_time)
+        lyo_time.addWidget(gbox_enter_time)
         lyo_enter_time = QtWidgets.QVBoxLayout(gbox_enter_time)
 
         lyo_time_grid = QtWidgets.QGridLayout()
@@ -259,12 +264,44 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.lne_time_5 = QtWidgets.QLineEdit()
         lyo_time_grid.addWidget(self.lne_time_5, 5, 5)
 
-        # spacer and save button
-        spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
-        lyo_enter_time.addItem(spacer)
+        # save button
         self.btn_save_time = QtWidgets.QPushButton("Save Time Entries")
         self.btn_save_time.clicked.connect(self.on_save)
         lyo_enter_time.addWidget(self.btn_save_time)
+
+        spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
+        lyo_time.addItem(spacer)
+
+        # milage calculator
+        gbox_milage_calc = QtWidgets.QGroupBox("Milage Calculator")
+        lyo_time.addWidget(gbox_milage_calc)
+        lyo_milage_calc = QtWidgets.QHBoxLayout(gbox_milage_calc)
+
+        lyo_milage_calc.addWidget(QtWidgets.QLabel("Milage"))
+        self.spn_milage = QtWidgets.QDoubleSpinBox()
+        self.spn_milage.setMinimumWidth(70)
+        self.spn_milage.setDecimals(1)
+        self.spn_milage.setSingleStep(0.1)
+        self.spn_milage.setMinimum(0)
+        self.spn_milage.setMaximum(9999)
+        self.spn_milage.valueChanged.connect(self.on_milage_updated)
+        lyo_milage_calc.addWidget(self.spn_milage)
+        lyo_milage_calc.addWidget(QtWidgets.QLabel("Reimbursement"))
+        self.lne_milage = QtWidgets.QLineEdit()
+        self.lne_milage.setReadOnly(True)
+        self.lne_milage.setMaximumWidth(80)
+        self.lne_milage.setText("$0.00")
+        lyo_milage_calc.addWidget(self.lne_milage)
+
+        spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        lyo_milage_calc.addItem(spacer)
+
+        lyo_milage_calc.addWidget(QtWidgets.QLabel("Add To:"))
+        self.cbx_add_milage = QtWidgets.QComboBox()
+        lyo_milage_calc.addWidget(self.cbx_add_milage)
+        btn_add_milage = QtWidgets.QPushButton("Add Reimbursement")
+        btn_add_milage.clicked.connect(self.on_add_milage)
+        lyo_milage_calc.addWidget(btn_add_milage)
 
         # reports layout
         lyo_reports = QtWidgets.QVBoxLayout()
@@ -353,6 +390,8 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.check_for_holidays(self.dte_time_3, self.cbx_time_3, self.lne_time_3)
         self.check_for_holidays(self.dte_time_4, self.cbx_time_4, self.lne_time_4)
         self.check_for_holidays(self.dte_time_5, self.cbx_time_5, self.lne_time_5)
+
+        self.cbx_add_milage.addItems(["Entry 1", "Entry 2", "Entry 3", "Entry 4", "Entry 5"])
 
         # autofill timesheet date range
         # TODO this should be based on the employer's payroll day of week value
@@ -560,6 +599,23 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         else:
             msg_box.setText("WARNING: Nothing to save.")
         msg_box.exec_()
+
+    def on_milage_updated(self):
+        """Calculates reimbursement for the milage input."""
+        milage = self.spn_milage.value()
+        self.milage_reimbursement = round(milage * (self.tax_rates.milage_reimbursement_rate / 100), 2)
+        self.lne_milage.setText(f"${self.milage_reimbursement:,.2f}")
+
+    def on_add_milage(self):
+        """Adds the current milage reimbursement calculation to the selected time entry."""
+        spn_widgets = [self.spn_time_reimburse_1,
+                       self.spn_time_reimburse_2,
+                       self.spn_time_reimburse_3,
+                       self.spn_time_reimburse_4,
+                       self.spn_time_reimburse_5]
+        index = self.cbx_add_milage.currentIndex()
+        target_widget = spn_widgets[index]
+        target_widget.setValue(target_widget.value() + self.milage_reimbursement)
 
     def on_timesheet_start_update(self):
         start = self.dte_timesheet_start.date()

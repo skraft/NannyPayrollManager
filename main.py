@@ -5,8 +5,6 @@ import sys
 import data_provider
 import ui
 
-# TODO add milage calculator
-
 
 if __name__ == '__main__':
     data = data_provider.DataProvider()

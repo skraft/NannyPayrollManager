@@ -633,7 +633,3 @@ class EAMSQuarterlyReport:
                   f"{report.hours}, "
                   f"{report.gross_pay}, "
                   f"{config.EAMS_OCCUPATIONAL_CODE}")
-
-
-val = 3.1
-print(math.ceil(val))

@@ -12,6 +12,7 @@
     "FederalUnemployment": 0,
     "FederalUnemploymentTaxableMaximum": 0,
     "StateUnemployment": 0,
+    "MilageReimbursementRate": 0,
     "FederalWithholding":
     {
       "Worksheet1A_1G_Married": 0,

@@ -146,6 +146,7 @@ class TaxRates:
         self._federal_unemployment: int or float = kwargs.get("federal_unemployment")  # percent value: ie 1.45%
         self.federal_unemployment_taxable_max: int = kwargs.get("federal_unemployment_taxable_max")
         self._state_unemployment: int or float = kwargs.get("state_unemployment")  # percent value: ie 1.45%
+        self.milage_reimbursement_rate: int or float = kwargs.get("milage_reimbursement_rate")  # in cents per mile
         self.federal_withholding: dict = kwargs.get("federal_withholding")
 
     def __repr__(self):
@@ -473,6 +474,7 @@ class DataProvider:
                 tax_rate._federal_unemployment = rates["FederalUnemployment"]
                 tax_rate.federal_unemployment_taxable_max = rates["FederalUnemploymentTaxableMaximum"]
                 tax_rate._state_unemployment = rates["StateUnemployment"]
+                tax_rate.milage_reimbursement_rate = rates["MilageReimbursementRate"]
                 tax_rate.federal_withholding = rates["FederalWithholding"]
 
                 self.tax_rates.append(tax_rate)
