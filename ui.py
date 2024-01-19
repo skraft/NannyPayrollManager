@@ -64,6 +64,9 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.spn_time_reimburse_5 = None
         self.lne_time_5 = None
         self.btn_save_time = None
+        self.spn_milage = None
+        self.lne_milage = None
+        self.cbx_add_milage = None
         self.dte_timesheet_start = None
         self.dte_timesheet_end = None
         self.lne_timesheet_path = None
@@ -72,6 +75,7 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.cbx_quarter_year = None
         self.cbx_quarter = None
         self.lne_quarterly_path = None
+        self.cbx_w2_year = None
 
         self.build_ui()
         self.populate_ui()
@@ -365,6 +369,20 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         btn_quarterly_save.clicked.connect(self.on_save_quarterly)
         lyo_quarterly.addWidget(btn_quarterly_save)
 
+        gbx_w2 = QtWidgets.QGroupBox("Yearly W-2 Report")
+        lyo_reports.addWidget(gbx_w2)
+        lyo_w2 = QtWidgets.QVBoxLayout(gbx_w2)
+        lyo_w2_inputs = QtWidgets.QGridLayout()
+        lyo_w2.addLayout(lyo_w2_inputs)
+
+        lyo_w2_inputs.addWidget(QtWidgets.QLabel("Year:"), 0, 0)
+        self.cbx_w2_year = QtWidgets.QComboBox()
+        lyo_w2_inputs.addWidget(self.cbx_w2_year, 0, 1)
+
+        btn_w2_print = QtWidgets.QPushButton("Print W-2 Report To Console")
+        btn_w2_print.clicked.connect(self.on_print_w2)
+        lyo_w2.addWidget(btn_w2_print)
+
         spacer = QtWidgets.QSpacerItem(0, 0, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
         lyo_reports.addItem(spacer)
 
@@ -400,17 +418,22 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
         self.dte_timesheet_end.setDate(self.last_monday.addDays(4))
         self.update_timesheet_path()
 
-        years = [str(self.today.year() - 1),
+        years = [str(self.today.year() - 3),
+                 str(self.today.year() - 2),
+                 str(self.today.year() - 1),
                  str(self.today.year()),
                  str(self.today.year() + 1)]
         self.cbx_quarter_year.addItems(years)
-        self.cbx_quarter_year.setCurrentIndex(1)
+        self.cbx_quarter_year.setCurrentIndex(3)
         quarters = ["Quarter 1: Jan - Mar",
                     "Quarter 2: Apr - June",
                     "Quarter 3: July - Sept",
                     "Quarter 4: Oct - Dec"]
         self.cbx_quarter.addItems(quarters)
         self.update_quarterly_path()
+
+        self.cbx_w2_year.addItems(years)
+        self.cbx_w2_year.setCurrentIndex(2)
 
     def update_timesheet_path(self):
         employee = self.data.get_employee_from_name(self.cbx_employee.currentText())
@@ -686,3 +709,8 @@ class NannyPayrollMangerUI(QtWidgets.QMainWindow):
 
         msg_box.setText("Quarterly report saved.")
         msg_box.exec()
+
+    def on_print_w2(self):
+        year = int(self.cbx_w2_year.currentText())
+        w2_report = reports.W2Report(self.data, year)
+        w2_report.print_to_console()

@@ -3,6 +3,7 @@ __author__ = 'Sean Kraft'
 from pathlib import Path
 from datetime import date as Date
 from datetime import timedelta
+from dataclasses import dataclass
 import csv
 import math
 
@@ -95,6 +96,25 @@ class QuarterlyReportValues:
     def add_time_entry(self, time_entry: TimeEntry):
         self.hours += time_entry.hours
         self.gross_pay += time_entry.gross_pay
+
+
+@dataclass
+class W2ReportValues:
+    employee: Employee or None = None
+    wages: float or int = 0
+    federal_withholding: float or int = 0
+    ss_wages: float or int = 0
+    ss_tax_withheld: float or int = 0
+    medicare_wages: float or int = 0
+    medicare_tax_withheld: float or int = 0
+
+    def add_time_entry(self, time_entry: TimeEntry):
+        self.wages += time_entry.gross_pay
+        self.medicare_tax_withheld += time_entry.medicare_employee
+        self.ss_tax_withheld += time_entry.ss_employee
+
+        if time_entry.federal_withholding:
+            self.federal_withholding += time_entry.federal_withholding
 
 
 def get_first_payday_of_year(year: int, payroll_day_of_week: int = 4):
@@ -633,3 +653,61 @@ class EAMSQuarterlyReport:
                   f"{report.hours}, "
                   f"{report.gross_pay}, "
                   f"{config.EAMS_OCCUPATIONAL_CODE}")
+
+
+class W2Report:
+    """Generates reports for yearly W2 filing with the Social Security Office."""
+    def __init__(self, data: DataProvider, year: int):
+        self.data_provider = data
+        self.employer = self.data_provider.employer
+
+        self.reports = []
+
+        self.year = year
+        self.start_date = Date(self.year, 1, 1)
+        self.end_date = Date(self.year, 12, 31)
+        self.calculate()
+
+    def calculate(self):
+        """Builds a report for each employee from the current date range."""
+        self.reports = []
+
+        tax_rates = self.data_provider.get_tax_rates(year=self.year)
+
+        for employee in self.data_provider.employees:
+            time_entries = self.data_provider.get_worked_time_in_range(employee, self.start_date, self.end_date)
+            if not time_entries:
+                print(f'WARNING: No time entries found for {employee.name} in the provided date range.')
+
+            report = W2ReportValues()
+            report.employee = employee
+            for time_entry in time_entries:
+                time_entry.tax_rates = tax_rates
+                report.add_time_entry(time_entry)
+
+            report.ss_wages = report.wages
+            report.medicare_wages = report.wages
+
+            # apply social security taxable wages cap to social security
+            if report.wages > tax_rates.ss_taxable_max:
+                report.ss_wages = tax_rates.ss_taxable_max
+                report.ss_tax_withheld = tax_rates.ss_taxable_max * tax_rates.ss_employee
+
+            self.reports.append(report)
+
+    def print_to_console(self):
+        for report in self.reports:
+            print(f"W-2 Report for {report.employee.name} from tax year {self.year}")
+            print("Box 1: Wages, tips, other compensation:")
+            print(f"        {report.wages:.2f}")
+            print("Box 2: Federal income tax withheld:")
+            print(f"        {report.federal_withholding:.2f}")
+            print("Box 3: Social security wages:")
+            print(f"        {report.ss_wages:.2f}")
+            print("Box 4: Social security tax withheld:")
+            print(f"        {report.ss_tax_withheld:.2f}")
+            print("Box 5: Medicare wages and tips:")
+            print(f"        {report.medicare_wages:.2f}")
+            print("Box 6: Medicare tax withheld:")
+            print(f"        {report.medicare_tax_withheld:.2f}")
+            print()
